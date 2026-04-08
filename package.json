@@ -1,0 +1,23 @@
+{
+  "name": "fillx-backend",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "yarn workspace @fillx/server dev",
+    "build": "yarn workspace @fillx/shared build && yarn workspace @fillx/server build && yarn workspace @fillx/client build",
+    "lint": "oxlint shared/ server/ client/",
+    "fmt": "oxlint --fix shared/ server/ client/",
+    "check": "yarn workspaces foreach run check"
+  },
+  "devDependencies": {
+    "oxlint": "^0.16.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
