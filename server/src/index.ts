@@ -3,6 +3,7 @@ import { RPCHandler } from "@orpc/server/node";
 import { CORSPlugin } from "@orpc/server/plugins";
 import { onError } from "@orpc/server";
 import { router } from "./router.js";
+import { handleRestApi } from "./rest-adapter.js";
 
 const port = Number(process.env.PORT ?? 8000);
 
@@ -21,6 +22,11 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok" }));
     return;
+  }
+
+  // REST API compatibility
+  if (req.url?.startsWith("/api/")) {
+    return handleRestApi(req, res);
   }
 
   // oRPC
