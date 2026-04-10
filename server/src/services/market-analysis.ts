@@ -137,7 +137,7 @@ Identify specific support and resistance levels and explain why they matter.
 ## Outlook
 Describe the most likely scenario and key risks to watch.
 
-Keep total response under 500 words. Write naturally like a market analyst, not a data dump.${langInstruction}`;
+Write naturally like a market analyst, not a data dump.${langInstruction}`;
   }
 
   return `You are a professional crypto trading strategist. Below is real-time data for ${symbol}. Use this data to create a specific, actionable trading plan. Do NOT just repeat numbers — provide concrete recommendations.
@@ -156,7 +156,7 @@ Give specific entry price, stop loss, and take profit levels with risk/reward ra
 ## Risk Management
 Recommend position sizing and maximum risk guidelines.
 
-Keep total response under 400 words. Write naturally like a trading strategist giving advice.${langInstruction}
+Write naturally like a trading strategist giving advice.${langInstruction}
 
 Disclaimer: Educational purposes only. Not financial advice.`;
 }
