@@ -14,6 +14,51 @@ const SYMBOL_TO_COINGECKO: Record<string, string> = {
   XRP: "ripple",
 };
 
+const ORDERLY_SYMBOL_MAP: Record<string, string> = {
+  BTC: "PERP_BTC_USDC",
+  ETH: "PERP_ETH_USDC",
+  SOL: "PERP_SOL_USDC",
+};
+
+async function fetchOHLCV(symbol: string): Promise<string> {
+  const orderlySymbol = ORDERLY_SYMBOL_MAP[symbol];
+  if (!orderlySymbol) return "";
+  try {
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - 2 * 60 * 60; // last 2 hours
+    const res = await fetch(
+      `https://api-evm.orderly.org/v1/tv/kline_history?symbol=${orderlySymbol}&resolution=5m&from=${from}&to=${to}`
+    );
+    if (!res.ok) return "";
+    const data = await res.json();
+    if (data.s !== "ok" || !data.o) return "";
+
+    const len = data.o.length;
+    const latest = {
+      open: data.o[len - 1],
+      close: data.c[len - 1],
+      high: data.h[len - 1],
+      low: data.l[len - 1],
+      volume: data.v[len - 1],
+    };
+    const periodHigh = Math.max(...data.h);
+    const periodLow = Math.min(...data.l);
+    const totalVolume = data.v.reduce((a: number, b: number) => a + b, 0);
+
+    return `
+OHLCV Data (last 2 hours, 5-min candles, ${len} data points):
+- Latest candle: Open $${latest.open.toFixed(2)}, Close $${latest.close.toFixed(2)}, High $${latest.high.toFixed(2)}, Low $${latest.low.toFixed(2)}
+- 2h High: $${periodHigh.toFixed(2)}
+- 2h Low: $${periodLow.toFixed(2)}
+- 2h Range: $${(periodHigh - periodLow).toFixed(2)} (${((periodHigh - periodLow) / periodLow * 100).toFixed(2)}%)
+- 2h Total Volume: ${totalVolume.toFixed(4)} ${symbol}
+- Trend: ${data.c[len - 1] > data.o[0] ? "Upward" : data.c[len - 1] < data.o[0] ? "Downward" : "Sideways"} (from $${data.o[0].toFixed(2)} to $${data.c[len - 1].toFixed(2)})
+`.trim();
+  } catch {
+    return "";
+  }
+}
+
 async function fetchMarketData(symbol: string): Promise<string> {
   const coinId = SYMBOL_TO_COINGECKO[symbol] || "bitcoin";
   try {
@@ -122,8 +167,12 @@ export async function analyzeMarket(params: AnalysisParams): Promise<{ content: 
     return { content: cached.data, cached: true };
   }
 
-  const marketData = await fetchMarketData(params.symbol || "BTC");
-  const prompt = buildPrompt(params, marketData);
+  const [marketData, ohlcvData] = await Promise.all([
+    fetchMarketData(params.symbol || "BTC"),
+    fetchOHLCV(params.symbol || "BTC"),
+  ]);
+  const combinedData = [marketData, ohlcvData].filter(Boolean).join("\n\n");
+  const prompt = buildPrompt(params, combinedData);
 
   try {
     const res = await fetch(GROQ_URL, {
