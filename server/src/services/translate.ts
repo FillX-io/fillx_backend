@@ -1,6 +1,27 @@
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+const LANG_NAMES: Record<string, string> = {
+  ko: "Korean",
+  ja: "Japanese",
+  zh: "Chinese (Simplified)",
+  tc: "Chinese (Traditional)",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  ru: "Russian",
+  pt: "Portuguese",
+  it: "Italian",
+  vi: "Vietnamese",
+  id: "Indonesian",
+  tr: "Turkish",
+  pl: "Polish",
+  nl: "Dutch",
+  uk: "Ukrainian",
+  ar: "Arabic",
+  sv: "Swedish",
+};
+
 // Cache: key = `${lang}:${text}` → translated text
 const cache = new Map<string, string>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -33,7 +54,8 @@ export async function translateTexts(
 
   // Batch translate uncached texts
   const uncachedTexts = uncachedIndices.map((i) => texts[i]);
-  const prompt = `Translate the following texts to ${targetLang}. Return ONLY the translations, one per line, in the same order. Do not add numbering or explanations.\n\n${uncachedTexts.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
+  const langName = LANG_NAMES[targetLang] || targetLang;
+  const prompt = `Translate the following English texts to ${langName}. Return ONLY the translations, one per line, in the same order. Do not add numbering or explanations.\n\n${uncachedTexts.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
 
   try {
     const res = await fetch(GROQ_URL, {
