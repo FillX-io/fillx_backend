@@ -134,16 +134,6 @@ function buildPrompt(params: AnalysisParams, marketData: string): string {
 
   const langInstruction = "";
 
-  // Free-form question mode
-  if (params.question) {
-    return `You are a professional crypto trading assistant. The user asks: "${params.question}"
-${dataContext}
-${strategyContext}
-${indicatorContext}
-
-Answer the user's question using the market data above. Be specific and helpful. Use "##" for section headers if needed. Write naturally.`;
-  }
-
   const strategyContext = strategy
     ? `\nThe user has selected the "${strategy}" strategy. Tailor your analysis to this strategy's approach.`
     : "";
@@ -153,6 +143,16 @@ Answer the user's question using the market data above. Be specific and helpful.
     : "\nNo specific indicators selected. Provide a general technical analysis.";
 
   const dataContext = marketData ? `\n\n${marketData}` : "";
+
+  // Free-form question mode
+  if (params.question) {
+    return `You are a professional crypto trading assistant. The user asks: "${params.question}"
+${dataContext}
+${strategyContext}
+${indicatorContext}
+
+Answer the user's question using the market data above. Be specific and helpful. Use "##" for section headers if needed. Write naturally.`;
+  }
 
   if (type === "analyze") {
     return `You are a professional crypto market analyst writing for traders. Below is real-time data for ${symbol}. Use this data to write an insightful analysis. Do NOT just repeat the numbers — interpret them, explain what they mean, and give actionable insights.
