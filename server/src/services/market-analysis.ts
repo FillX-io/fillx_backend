@@ -96,8 +96,15 @@ interface AnalysisParams {
 function buildPrompt(params: AnalysisParams, marketData: string): string {
   const { type, symbol = "BTC", strategy, indicators, lang } = params;
 
+  const LANG_NAMES: Record<string, string> = {
+    ko: "Korean", ja: "Japanese", zh: "Chinese", es: "Spanish",
+    fr: "French", de: "German", ru: "Russian", pt: "Portuguese",
+    it: "Italian", vi: "Vietnamese", tr: "Turkish", pl: "Polish",
+    nl: "Dutch", uk: "Ukrainian", ar: "Arabic",
+  };
+  const langName = lang ? LANG_NAMES[lang] || lang : "";
   const langInstruction = lang && lang !== "en"
-    ? `\n\nIMPORTANT: Respond entirely in ${lang} language.`
+    ? `\n\nIMPORTANT: You MUST respond entirely in ${langName}. Do NOT use English. Every word must be in ${langName}.`
     : "";
 
   const strategyContext = strategy
@@ -111,47 +118,45 @@ function buildPrompt(params: AnalysisParams, marketData: string): string {
   const dataContext = marketData ? `\n\n${marketData}` : "";
 
   if (type === "analyze") {
-    return `You are a professional crypto market analyst. Analyze the current market conditions for ${symbol}.
+    return `You are a professional crypto market analyst writing for traders. Below is real-time data for ${symbol}. Use this data to write an insightful analysis. Do NOT just repeat the numbers — interpret them, explain what they mean, and give actionable insights.
 ${dataContext}
 ${strategyContext}
 ${indicatorContext}
 
-Write a concise market analysis with these sections. Use plain text with minimal formatting. Use "##" for section headers only. Do NOT use "###" or "####". Write in paragraphs, not bullet lists.
+Write your analysis as flowing paragraphs under these headers (use "##" only, no "###" or "####"):
 
-Sections:
 ## Summary
-(2-3 sentences about current market state)
+Write 2-3 sentences interpreting the current price action and market sentiment.
 
 ## Technical Assessment
-(Trend direction, key indicator values, momentum)
+Explain the trend, momentum, and what the indicators suggest about the next move.
 
 ## Key Levels
-(Support and resistance prices)
+Identify specific support and resistance levels and explain why they matter.
 
 ## Outlook
-(Most likely scenario and risks)
+Describe the most likely scenario and key risks to watch.
 
-Keep the total response under 500 words.${langInstruction}`;
+Keep total response under 500 words. Write naturally like a market analyst, not a data dump.${langInstruction}`;
   }
 
-  return `You are a professional crypto trading strategist. Create a trading plan for ${symbol}.
+  return `You are a professional crypto trading strategist. Below is real-time data for ${symbol}. Use this data to create a specific, actionable trading plan. Do NOT just repeat numbers — provide concrete recommendations.
 ${dataContext}
 ${strategyContext}
 ${indicatorContext}
 
-Write a concise trading plan with these sections. Use plain text with minimal formatting. Use "##" for section headers only. Do NOT use "###" or "####". Write in paragraphs, not bullet lists.
+Write your plan as flowing paragraphs under these headers (use "##" only, no "###" or "####"):
 
-Sections:
 ## Trade Setup
-(Entry conditions and rationale)
+Explain the entry conditions and reasoning based on the current data.
 
 ## Entry & Exit
-(Entry price, stop loss price, take profit price, risk/reward ratio)
+Give specific entry price, stop loss, and take profit levels with risk/reward ratio.
 
 ## Risk Management
-(Position size guideline, maximum risk)
+Recommend position sizing and maximum risk guidelines.
 
-Keep the total response under 400 words.${langInstruction}
+Keep total response under 400 words. Write naturally like a trading strategist giving advice.${langInstruction}
 
 Disclaimer: Educational purposes only. Not financial advice.`;
 }
