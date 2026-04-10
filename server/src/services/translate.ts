@@ -60,7 +60,7 @@ export async function translateTexts(
   let retryCount = 0;
   for (let b = 0; b < uncachedTexts.length; b += BATCH_SIZE) {
     // Wait between batches to avoid rate limit
-    if (b > 0) await new Promise((r) => setTimeout(r, 2000));
+    if (b > 0) await new Promise((r) => setTimeout(r, 15000));
     retryCount = 0;
     const batch = uncachedTexts.slice(b, b + BATCH_SIZE);
     const batchIndices = uncachedIndices.slice(b, b + BATCH_SIZE);
