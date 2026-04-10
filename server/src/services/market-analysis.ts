@@ -1,9 +1,44 @@
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const COINGECKO_URL = "https://api.coingecko.com/api/v3";
 
-// Cache: key = `${type}:${symbol}:${strategy}:${indicators}` → response
+// Cache: key = `${type}:${symbol}:${strategy}:${indicators}:${lang}` → response
 const cache = new Map<string, { data: string; expires: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const SYMBOL_TO_COINGECKO: Record<string, string> = {
+  BTC: "bitcoin",
+  ETH: "ethereum",
+  SOL: "solana",
+  DOGE: "dogecoin",
+  XRP: "ripple",
+};
+
+async function fetchMarketData(symbol: string): Promise<string> {
+  const coinId = SYMBOL_TO_COINGECKO[symbol] || "bitcoin";
+  try {
+    const res = await fetch(
+      `${COINGECKO_URL}/coins/${coinId}?localization=false&tickers=false&community_data=false&developer_data=false`
+    );
+    if (!res.ok) return "";
+    const data = await res.json();
+    const md = data.market_data;
+    if (!md) return "";
+    return `
+Current Market Data for ${symbol}:
+- Price: $${md.current_price?.usd?.toLocaleString() ?? "N/A"}
+- 24h Change: ${md.price_change_percentage_24h?.toFixed(2) ?? "N/A"}%
+- 24h High: $${md.high_24h?.usd?.toLocaleString() ?? "N/A"}
+- 24h Low: $${md.low_24h?.usd?.toLocaleString() ?? "N/A"}
+- 24h Volume: $${(md.total_volume?.usd / 1e6)?.toFixed(1) ?? "N/A"}M
+- Market Cap: $${(md.market_cap?.usd / 1e9)?.toFixed(1) ?? "N/A"}B
+- ATH: $${md.ath?.usd?.toLocaleString() ?? "N/A"}
+- ATH Change: ${md.ath_change_percentage?.usd?.toFixed(1) ?? "N/A"}%
+`.trim();
+  } catch {
+    return "";
+  }
+}
 
 interface AnalysisParams {
   type: "analyze" | "plan";
@@ -13,7 +48,7 @@ interface AnalysisParams {
   lang?: string;
 }
 
-function buildPrompt(params: AnalysisParams): string {
+function buildPrompt(params: AnalysisParams, marketData: string): string {
   const { type, symbol = "BTC", strategy, indicators, lang } = params;
 
   const langInstruction = lang && lang !== "en"
@@ -28,8 +63,11 @@ function buildPrompt(params: AnalysisParams): string {
     ? `\nFocus your analysis on these technical indicators: ${indicators.join(", ")}. Provide specific values and interpretations for each.`
     : "\nNo specific indicators selected. Provide a general technical analysis.";
 
+  const dataContext = marketData ? `\n\n${marketData}` : "";
+
   if (type === "analyze") {
     return `You are a professional crypto market analyst. Analyze the current market conditions for ${symbol}.
+${dataContext}
 ${strategyContext}
 ${indicatorContext}
 
@@ -52,6 +90,7 @@ Keep the total response under 500 words.${langInstruction}`;
   }
 
   return `You are a professional crypto trading strategist. Create a trading plan for ${symbol}.
+${dataContext}
 ${strategyContext}
 ${indicatorContext}
 
@@ -83,7 +122,8 @@ export async function analyzeMarket(params: AnalysisParams): Promise<{ content: 
     return { content: cached.data, cached: true };
   }
 
-  const prompt = buildPrompt(params);
+  const marketData = await fetchMarketData(params.symbol || "BTC");
+  const prompt = buildPrompt(params, marketData);
 
   try {
     const res = await fetch(GROQ_URL, {
