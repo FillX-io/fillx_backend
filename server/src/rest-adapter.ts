@@ -47,6 +47,7 @@ import { getLatestVersion } from "./services/version.js";
 import { getDownloadUrl } from "./services/download.js";
 import { getCacheTelemetrySnapshot } from "./services/cache-telemetry-endpoint.js";
 import { translateTexts } from "./services/translate.js";
+import { analyzeMarket } from "./services/market-analysis.js";
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -143,6 +144,15 @@ const POST_ROUTES: Record<string, Handler> = {
   "/api/translate": async (_q, body) => {
     const translated = await translateTexts(body.texts ?? [], body.lang ?? "en");
     return { texts: translated };
+  },
+  "/api/market-analysis": async (_q, body) => {
+    return await analyzeMarket({
+      type: body.type ?? "analyze",
+      symbol: body.symbol,
+      strategy: body.strategy,
+      indicators: body.indicators,
+      lang: body.lang,
+    });
   },
 };
 
