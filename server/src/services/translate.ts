@@ -43,7 +43,7 @@ export async function translateTexts(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.2-3b-instruct:free",
+        model: "meta-llama/llama-3.3-70b-instruct:free",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 2000,
