@@ -30,39 +30,46 @@ function buildPrompt(params: AnalysisParams): string {
 
   if (type === "analyze") {
     return `You are a professional crypto market analyst. Analyze the current market conditions for ${symbol}.
-
 ${strategyContext}
 ${indicatorContext}
 
-Provide a comprehensive analysis including:
-1. **Market Analysis Summary** - Current price context and market state
-2. **Technical Assessment** - Trend, momentum, volatility analysis
-3. **Key Levels** - Support and resistance levels to monitor
-4. **Market Perspective** - Potential scenarios and developments
-5. **Risk Awareness** - Market risks and analysis limitations
+Write a concise market analysis with these sections. Use plain text with minimal formatting. Use "##" for section headers only. Do NOT use "###" or "####". Write in paragraphs, not bullet lists.
 
-Format your response in clean markdown with headers and bullet points.
-Keep it concise but thorough.${langInstruction}`;
+Sections:
+## Summary
+(2-3 sentences about current market state)
+
+## Technical Assessment
+(Trend direction, key indicator values, momentum)
+
+## Key Levels
+(Support and resistance prices)
+
+## Outlook
+(Most likely scenario and risks)
+
+Keep the total response under 500 words.${langInstruction}`;
   }
 
-  // type === "plan"
   return `You are a professional crypto trading strategist. Create a trading plan for ${symbol}.
-
 ${strategyContext}
 ${indicatorContext}
 
-Provide a detailed trading plan including:
-1. **Trade Setup** - Entry conditions and rationale
-2. **Entry Points** - Specific price levels for entry
-3. **Stop Loss** - Where to place stop loss and why
-4. **Take Profit** - Target levels with risk/reward ratio
-5. **Position Sizing** - Recommended position size guidelines
-6. **Risk Management** - Maximum risk per trade
+Write a concise trading plan with these sections. Use plain text with minimal formatting. Use "##" for section headers only. Do NOT use "###" or "####". Write in paragraphs, not bullet lists.
 
-Format your response in clean markdown with headers and bullet points.
-Include specific price levels where possible.${langInstruction}
+Sections:
+## Trade Setup
+(Entry conditions and rationale)
 
-*Disclaimer: This is for educational purposes only. Not financial advice.*`;
+## Entry & Exit
+(Entry price, stop loss price, take profit price, risk/reward ratio)
+
+## Risk Management
+(Position size guideline, maximum risk)
+
+Keep the total response under 400 words.${langInstruction}
+
+Disclaimer: Educational purposes only. Not financial advice.`;
 }
 
 export async function analyzeMarket(params: AnalysisParams): Promise<{ content: string; cached: boolean }> {
