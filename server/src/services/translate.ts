@@ -54,13 +54,13 @@ export async function translateTexts(
 
   // Batch translate uncached texts in chunks of 10 with delay
   const uncachedTexts = uncachedIndices.map((i) => texts[i]);
-  const BATCH_SIZE = 10;
+  const BATCH_SIZE = 20;
   const langName = LANG_NAMES[targetLang] || targetLang;
 
   let retryCount = 0;
   for (let b = 0; b < uncachedTexts.length; b += BATCH_SIZE) {
     // Wait between batches to avoid rate limit
-    if (b > 0) await new Promise((r) => setTimeout(r, 15000));
+    if (b > 0) await new Promise((r) => setTimeout(r, 5000));
     retryCount = 0;
     const batch = uncachedTexts.slice(b, b + BATCH_SIZE);
     const batchIndices = uncachedIndices.slice(b, b + BATCH_SIZE);
