@@ -70,7 +70,7 @@ export async function analyzeMarket(params: AnalysisParams): Promise<{ content: 
     return { content: "Groq API key not configured.", cached: false };
   }
 
-  const cacheKey = `${params.type}:${params.symbol || "BTC"}:${params.strategy || ""}:${(params.indicators || []).sort().join(",")}`;
+  const cacheKey = `${params.type}:${params.symbol || "BTC"}:${params.strategy || ""}:${(params.indicators || []).sort().join(",")}:${params.lang || "en"}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() < cached.expires) {
     return { content: cached.data, cached: true };
