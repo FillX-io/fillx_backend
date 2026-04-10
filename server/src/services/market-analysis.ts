@@ -126,13 +126,23 @@ interface AnalysisParams {
   strategy?: string;
   indicators?: string[];
   lang?: string;
+  question?: string;
 }
 
 function buildPrompt(params: AnalysisParams, marketData: string): string {
   const { type, symbol = "BTC", strategy, indicators, lang } = params;
 
-  // Always generate in English — translation happens after
   const langInstruction = "";
+
+  // Free-form question mode
+  if (params.question) {
+    return `You are a professional crypto trading assistant. The user asks: "${params.question}"
+${dataContext}
+${strategyContext}
+${indicatorContext}
+
+Answer the user's question using the market data above. Be specific and helpful. Use "##" for section headers if needed. Write naturally.`;
+  }
 
   const strategyContext = strategy
     ? `\nThe user has selected the "${strategy}" strategy. Tailor your analysis to this strategy's approach.`
@@ -193,10 +203,13 @@ export async function analyzeMarket(params: AnalysisParams): Promise<{ content: 
     return { content: "Groq API key not configured.", cached: false };
   }
 
+  const hasQuestion = !!params.question;
   const cacheKey = `${params.type}:${params.symbol || "BTC"}:${params.strategy || ""}:${(params.indicators || []).sort().join(",")}:${params.lang || "en"}`;
-  const cached = cache.get(cacheKey);
-  if (cached && Date.now() < cached.expires) {
-    return { content: cached.data, cached: true };
+  if (!hasQuestion) {
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() < cached.expires) {
+      return { content: cached.data, cached: true };
+    }
   }
 
   const [marketData, ohlcvData] = await Promise.all([

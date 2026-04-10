@@ -152,6 +152,7 @@ const POST_ROUTES: Record<string, Handler> = {
       strategy: body.strategy,
       indicators: body.indicators,
       lang: body.lang,
+      question: body.question,
     });
   },
 };
