@@ -2,6 +2,41 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const COINGECKO_URL = "https://api.coingecko.com/api/v3";
 
+const LANG_NAMES: Record<string, string> = {
+  ko: "Korean", ja: "Japanese", zh: "Chinese", es: "Spanish",
+  fr: "French", de: "German", ru: "Russian", pt: "Portuguese",
+  it: "Italian", vi: "Vietnamese", tr: "Turkish", pl: "Polish",
+  nl: "Dutch", uk: "Ukrainian", ar: "Arabic",
+};
+
+async function translateBlock(text: string, targetLang: string): Promise<string> {
+  if (!GROQ_API_KEY || targetLang === "en") return text;
+  const langName = LANG_NAMES[targetLang] || targetLang;
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [{
+          role: "user",
+          content: `Translate the following market analysis text to ${langName}. Keep all markdown formatting (## headers, **bold**, etc) exactly as-is. Only translate the text content. Do not add any commentary.\n\n${text}`,
+        }],
+        temperature: 0.1,
+        max_tokens: 4000,
+      }),
+    });
+    if (!res.ok) return text;
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || text;
+  } catch {
+    return text;
+  }
+}
+
 // Cache: key = `${type}:${symbol}:${strategy}:${indicators}:${lang}` → response
 const cache = new Map<string, { data: string; expires: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -96,16 +131,8 @@ interface AnalysisParams {
 function buildPrompt(params: AnalysisParams, marketData: string): string {
   const { type, symbol = "BTC", strategy, indicators, lang } = params;
 
-  const LANG_NAMES: Record<string, string> = {
-    ko: "Korean", ja: "Japanese", zh: "Chinese", es: "Spanish",
-    fr: "French", de: "German", ru: "Russian", pt: "Portuguese",
-    it: "Italian", vi: "Vietnamese", tr: "Turkish", pl: "Polish",
-    nl: "Dutch", uk: "Ukrainian", ar: "Arabic",
-  };
-  const langName = lang ? LANG_NAMES[lang] || lang : "";
-  const langInstruction = lang && lang !== "en"
-    ? `\n\nIMPORTANT: You MUST respond entirely in ${langName}. Do NOT use English. Every word must be in ${langName}.`
-    : "";
+  // Always generate in English — translation happens after
+  const langInstruction = "";
 
   const strategyContext = strategy
     ? `\nThe user has selected the "${strategy}" strategy. Tailor your analysis to this strategy's approach.`
@@ -211,6 +238,14 @@ export async function analyzeMarket(params: AnalysisParams): Promise<{ content: 
       for (const [k, v] of cache) {
         if (now > v.expires) cache.delete(k);
       }
+    }
+
+    // Translate if not English
+    const lang = params.lang || "en";
+    if (lang !== "en") {
+      const translatedContent = await translateBlock(content, lang);
+      cache.set(cacheKey, { data: translatedContent, expires: Date.now() + CACHE_TTL });
+      return { content: translatedContent, cached: false };
     }
 
     return { content, cached: false };
