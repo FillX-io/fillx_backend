@@ -46,6 +46,7 @@ import { getWorldPopExposure } from "./services/worldpop-exposure.js";
 import { getLatestVersion } from "./services/version.js";
 import { getDownloadUrl } from "./services/download.js";
 import { getCacheTelemetrySnapshot } from "./services/cache-telemetry-endpoint.js";
+import { translateTexts } from "./services/translate.js";
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -139,6 +140,10 @@ const POST_ROUTES: Record<string, Handler> = {
   "/api/country-intel": async (_q, body) => getCountryIntel({ country: body.country, code: body.country, context: body.context }),
   "/api/groq-summarize": async (_q, body) => groqSummarize({ headlines: body.headlines ?? [], mode: body.mode, variant: body.variant, lang: body.language }),
   "/api/openrouter-summarize": async (_q, body) => openrouterSummarize({ headlines: body.headlines ?? [], mode: body.mode, variant: body.variant, lang: body.language }),
+  "/api/translate": async (_q, body) => {
+    const translated = await translateTexts(body.texts ?? [], body.lang ?? "en");
+    return { texts: translated };
+  },
 };
 
 // ─── Main handler ─────────────────────────────────────────────
