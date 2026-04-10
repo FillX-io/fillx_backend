@@ -52,12 +52,16 @@ export async function translateTexts(
     return results as string[];
   }
 
-  // Batch translate uncached texts in chunks of 20
+  // Batch translate uncached texts in chunks of 10 with delay
   const uncachedTexts = uncachedIndices.map((i) => texts[i]);
-  const BATCH_SIZE = 20;
+  const BATCH_SIZE = 10;
   const langName = LANG_NAMES[targetLang] || targetLang;
 
+  let retryCount = 0;
   for (let b = 0; b < uncachedTexts.length; b += BATCH_SIZE) {
+    // Wait between batches to avoid rate limit
+    if (b > 0) await new Promise((r) => setTimeout(r, 2000));
+    retryCount = 0;
     const batch = uncachedTexts.slice(b, b + BATCH_SIZE);
     const batchIndices = uncachedIndices.slice(b, b + BATCH_SIZE);
     const prompt = `Translate the following English texts to ${langName}. Return ONLY the translations, one per line, in the same order. Do not add numbering or explanations.\n\n${batch.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
@@ -77,6 +81,17 @@ export async function translateTexts(
         }),
       });
 
+      if (res.status === 429) {
+        retryCount = (retryCount || 0) + 1;
+        if (retryCount > 3) {
+          console.error(`[translate] Rate limit exceeded after 3 retries, skipping batch`);
+          continue;
+        }
+        console.warn(`[translate] Rate limited, waiting 5s (retry ${retryCount}/3)...`);
+        await new Promise((r) => setTimeout(r, 5000));
+        b -= BATCH_SIZE; // retry this batch
+        continue;
+      }
       if (!res.ok) {
         console.error(`[translate] Groq error: ${res.status}`);
         continue;
