@@ -1,5 +1,5 @@
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // Cache: key = `${lang}:${text}` → translated text
 const cache = new Map<string, string>();
@@ -10,7 +10,7 @@ export async function translateTexts(
   texts: string[],
   targetLang: string
 ): Promise<string[]> {
-  if (!OPENROUTER_API_KEY || targetLang === "en") {
+  if (!GROQ_API_KEY || targetLang === "en") {
     return texts;
   }
 
@@ -36,14 +36,14 @@ export async function translateTexts(
   const prompt = `Translate the following texts to ${targetLang}. Return ONLY the translations, one per line, in the same order. Do not add numbering or explanations.\n\n${uncachedTexts.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(GROQ_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${GROQ_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.3-70b-instruct:free",
+        model: "llama-3.1-8b-instant",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 2000,
