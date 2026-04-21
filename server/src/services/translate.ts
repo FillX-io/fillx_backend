@@ -1,6 +1,12 @@
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+/** Remove repeated words/phrases from LLM output (e.g. "지식지식지식" → "지식") */
+function dedupeRepeats(text: string): string {
+  // Match a substring of 1-10 chars repeated 3+ times consecutively
+  return text.replace(/(.{1,10})\1{2,}/g, '$1');
+}
+
 const LANG_NAMES: Record<string, string> = {
   ko: "Korean",
   ja: "Japanese",
@@ -52,69 +58,73 @@ export async function translateTexts(
     return results as string[];
   }
 
-  // Batch translate uncached texts in chunks of 10 with delay
+  // Batch translate uncached texts — all batches run in parallel
   const uncachedTexts = uncachedIndices.map((i) => texts[i]);
-  const BATCH_SIZE = 20;
+  const BATCH_SIZE = 50;
   const langName = LANG_NAMES[targetLang] || targetLang;
 
-  let retryCount = 0;
+  const batchPromises: Promise<void>[] = [];
+
   for (let b = 0; b < uncachedTexts.length; b += BATCH_SIZE) {
-    // Wait between batches to avoid rate limit
-    if (b > 0) await new Promise((r) => setTimeout(r, 5000));
-    retryCount = 0;
     const batch = uncachedTexts.slice(b, b + BATCH_SIZE);
     const batchIndices = uncachedIndices.slice(b, b + BATCH_SIZE);
     const prompt = `Translate the following English texts to ${langName}. Return ONLY the translations, one per line, in the same order. Do not add numbering or explanations.\n\n${batch.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
 
-    try {
-      const res = await fetch(GROQ_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.1,
-          max_tokens: 4000,
-        }),
-      });
+    batchPromises.push(
+      (async (bIdx: number[]) => {
+        for (let retry = 0; retry < 3; retry++) {
+          try {
+            const res = await fetch(GROQ_URL, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${GROQ_API_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "llama-3.1-8b-instant",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.1,
+                max_tokens: 4000,
+                frequency_penalty: 0.5,
+              }),
+            });
 
-      if (res.status === 429) {
-        retryCount = (retryCount || 0) + 1;
-        if (retryCount > 3) {
-          console.error(`[translate] Rate limit exceeded after 3 retries, skipping batch`);
-          continue;
+            if (res.status === 429) {
+              console.warn(`[translate] Rate limited, waiting 2s (retry ${retry + 1}/3)...`);
+              await new Promise((r) => setTimeout(r, 2000));
+              continue;
+            }
+            if (!res.ok) {
+              console.error(`[translate] Groq error: ${res.status}`);
+              return;
+            }
+
+            const data = await res.json();
+            const content = data.choices?.[0]?.message?.content?.trim() || "";
+            const lines = content
+              .split("\n")
+              .map((l: string) => l.replace(/^\d+\.\s*/, "").trim())
+              .filter((l: string) => l.length > 0);
+
+            bIdx.forEach((origIdx, i) => {
+              let translated = lines[i] || texts[origIdx];
+              // Detect and fix repeated words/phrases (e.g. "지식지식지식지식")
+              translated = dedupeRepeats(translated);
+              const key = `${targetLang}:${texts[origIdx]}`;
+              cache.set(key, translated);
+              cacheTimestamps.set(key, Date.now());
+              results[origIdx] = translated;
+            });
+            return;
+          } catch (err) {
+            console.error("[translate] Batch failed:", err);
+          }
         }
-        console.warn(`[translate] Rate limited, waiting 5s (retry ${retryCount}/3)...`);
-        await new Promise((r) => setTimeout(r, 5000));
-        b -= BATCH_SIZE; // retry this batch
-        continue;
-      }
-      if (!res.ok) {
-        console.error(`[translate] Groq error: ${res.status}`);
-        continue;
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content?.trim() || "";
-      const lines = content
-        .split("\n")
-        .map((l: string) => l.replace(/^\d+\.\s*/, "").trim())
-        .filter((l: string) => l.length > 0);
-
-      batchIndices.forEach((origIdx, i) => {
-        const translated = lines[i] || texts[origIdx];
-        const key = `${targetLang}:${texts[origIdx]}`;
-        cache.set(key, translated);
-        cacheTimestamps.set(key, Date.now());
-        results[origIdx] = translated;
-      });
-    } catch (err) {
-      console.error("[translate] Batch failed:", err);
-    }
+      })(batchIndices)
+    );
   }
+
+  await Promise.all(batchPromises);
 
   // Cleanup old cache entries
   if (cache.size > 5000) {

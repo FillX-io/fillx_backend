@@ -1,8 +1,25 @@
 /**
  * RSS Proxy Service
- * Proxies RSS feed requests with domain allowlist and redirect handling.
- * No caching (returns raw XML).
+ * Proxies RSS feed requests with domain allowlist, redirect handling,
+ * and in-memory caching (5 min TTL) with request coalescing.
  */
+
+// ── In-memory cache ──
+interface RssCacheEntry {
+  result: RssProxyResult;
+  expiresAt: number;
+}
+const rssCache = new Map<string, RssCacheEntry>();
+const RSS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const inflight = new Map<string, Promise<RssProxyResult | RssProxyError>>();
+
+// Cleanup stale entries every 2 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rssCache) {
+    if (v.expiresAt <= now) rssCache.delete(k);
+  }
+}, 2 * 60 * 1000).unref?.();
 
 const ALLOWED_DOMAINS = [
   'feeds.bbci.co.uk', 'www.theguardian.com', 'feeds.npr.org', 'news.google.com',
@@ -81,6 +98,31 @@ export async function fetchRssFeed(params: { url: string }): Promise<RssProxyRes
     throw new Error('Domain not allowed');
   }
 
+  // Return cached response if available
+  const cached = rssCache.get(feedUrl);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
+  }
+
+  // Coalesce concurrent requests for the same URL
+  const existing = inflight.get(feedUrl);
+  if (existing) return existing;
+
+  const promise = fetchRssFeedRaw(feedUrl);
+  inflight.set(feedUrl, promise);
+  try {
+    const result = await promise;
+    // Only cache successful responses
+    if ('data' in result) {
+      rssCache.set(feedUrl, { result, expiresAt: Date.now() + RSS_CACHE_TTL });
+    }
+    return result;
+  } finally {
+    inflight.delete(feedUrl);
+  }
+}
+
+async function fetchRssFeedRaw(feedUrl: string): Promise<RssProxyResult | RssProxyError> {
   const isGoogleNews = feedUrl.includes('news.google.com');
   const timeout = isGoogleNews ? 20000 : 12000;
 

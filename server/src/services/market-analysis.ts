@@ -27,6 +27,7 @@ async function translateBlock(text: string, targetLang: string): Promise<string>
         }],
         temperature: 0.1,
         max_tokens: 4000,
+        frequency_penalty: 0.6,
       }),
     });
     if (!res.ok) return text;
@@ -231,6 +232,7 @@ export async function analyzeMarket(params: AnalysisParams): Promise<{ content: 
         messages: [{ role: "user", content: prompt }],
         temperature: 0.3,
         max_tokens: 4000,
+        frequency_penalty: 0.5,
       }),
     });
 
