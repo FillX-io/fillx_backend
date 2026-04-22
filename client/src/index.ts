@@ -1,6 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { createORPCReactQueryUtils } from "@orpc/react-query";
+import type { ContractRouterClient } from "@orpc/contract";
 import type { Contract } from "@fillx/shared";
 
 /**
@@ -12,7 +13,7 @@ import type { Contract } from "@fillx/shared";
  */
 export function createClient(baseUrl: string) {
   const link = new RPCLink({ url: `${baseUrl}/rpc` });
-  return createORPCClient<Contract>(link);
+  return createORPCClient<ContractRouterClient<Contract>>(link);
 }
 
 /**
