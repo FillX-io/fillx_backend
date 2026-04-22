@@ -173,6 +173,18 @@ export const contract = oc.router({
 
   // ─── FwdStart ──────────────────────────────────────
   fwdstart: oc.output(JsonData),
+
+  // ─── Anti-Fraud ────────────────────────────────────
+  trackIpConnection: oc
+    .input(
+      z.object({
+        wallet: z.string().min(1),
+        ip: z.string().min(1),
+        city: z.string().nullable().optional(),
+        country: z.string().nullable().optional(),
+      }),
+    )
+    .output(z.object({ success: z.literal(true) })),
 });
 
 export type Contract = typeof contract;

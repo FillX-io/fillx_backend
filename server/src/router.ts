@@ -57,6 +57,7 @@ import { fetchWingbitsDetails } from "./services/wingbits-details.js";
 import { fetchWingbitsBatch } from "./services/wingbits-batch.js";
 import { fetchEiaPetroleum } from "./services/eia.js";
 import { fetchFwdStartRss } from "./services/fwdstart.js";
+import { trackIpConnection } from "./services/track-ip-connection.js";
 
 const pub = implement(contract);
 
@@ -153,6 +154,11 @@ export const router = pub.router({
 
   // ─── FwdStart ──────────────────────────────────────
   fwdstart: pub.fwdstart.handler(async () => await fetchFwdStartRss()),
+
+  // ─── Anti-Fraud ────────────────────────────────────
+  trackIpConnection: pub.trackIpConnection.handler(
+    async ({ input }) => await trackIpConnection(input),
+  ),
 });
 
 export type Router = typeof router;
