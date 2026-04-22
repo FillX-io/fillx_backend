@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createServer } from "node:http";
 import { RPCHandler } from "@orpc/server/node";
 import { CORSPlugin } from "@orpc/server/plugins";

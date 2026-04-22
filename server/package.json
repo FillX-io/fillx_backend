@@ -16,6 +16,7 @@
     "@fillx/shared": "0.1.0",
     "@orpc/contract": "^1.13.0",
     "@orpc/server": "^1.13.0",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.20.0",
     "zod": "^3.24.0"

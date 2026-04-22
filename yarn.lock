@@ -611,6 +611,11 @@ csstype@^3.2.2:
   resolved "https://registry.yarnpkg.com/csstype/-/csstype-3.2.3.tgz#ec48c0f3e993e50648c86da559e2610995cf989a"
   integrity sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==
 
+dotenv@^17.4.2:
+  version "17.4.2"
+  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-17.4.2.tgz#c07e54a746e11eba021dd9e1047ced5afdc1c034"
+  integrity sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==
+
 drizzle-kit@^0.31.10:
   version "0.31.10"
   resolved "https://registry.yarnpkg.com/drizzle-kit/-/drizzle-kit-0.31.10.tgz#556b4ba9ecfe089423dc5338634efa9ecd9afc1a"
