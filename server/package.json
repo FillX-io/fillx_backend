@@ -13,10 +13,14 @@
     "@fillx/shared": "0.1.0",
     "@orpc/contract": "^1.13.0",
     "@orpc/server": "^1.13.0",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.20.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",
+    "@types/pg": "^8.20.0",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
