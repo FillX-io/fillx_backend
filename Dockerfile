@@ -15,6 +15,8 @@ COPY --from=builder /app/shared/package.json shared/
 COPY --from=builder /app/shared/dist shared/dist
 COPY --from=builder /app/server/package.json server/
 COPY --from=builder /app/server/dist server/dist
+COPY --from=builder /app/server/drizzle.config.ts server/
+COPY --from=builder /app/server/src/db server/src/db
 COPY --from=builder /app/node_modules node_modules
 EXPOSE 8000
 CMD ["node", "server/dist/index.js"]
