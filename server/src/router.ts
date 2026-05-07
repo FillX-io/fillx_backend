@@ -104,14 +104,19 @@ function isSecureCookieEnv(context: AppContext): boolean {
   return context.env.nodeEnv !== "development" && context.env.nodeEnv !== "test";
 }
 
+function requireFillxSessionSecret(context: AppContext): string {
+  if (!context.env.fillxJwtSecret) throw apiError("SESSION_NOT_CONFIGURED");
+  return context.env.fillxJwtSecret;
+}
+
 async function issueFillxSession(
   context: AppContext,
   userId: string,
 ): Promise<void> {
-  if (!context.env.fillxJwtSecret) throw apiError("SESSION_NOT_CONFIGURED");
+  const secret = requireFillxSessionSecret(context);
   const token = await signFillxSession({
     userId,
-    secret: context.env.fillxJwtSecret,
+    secret,
   });
   setFillxSessionCookie(context.resHeaders, token, {
     secure: isSecureCookieEnv(context),
@@ -152,6 +157,25 @@ async function authenticatedUserIdFromContext(
   }
 
   return null;
+}
+
+function usernameClaimRateLimitWalletKey(input: {
+  chainType: "evm" | "solana";
+  walletAddress: string;
+}): string {
+  const rawKey = `${input.chainType}:${input.walletAddress}`;
+  try {
+    const walletAddress =
+      input.chainType === "evm"
+        ? input.walletAddress.trim().replace(/^0X/, "0x")
+        : input.walletAddress.trim();
+    return `${input.chainType}:${normalizeWalletAddress(
+      input.chainType,
+      walletAddress,
+    )}`;
+  } catch {
+    return rawKey;
+  }
 }
 
 function createUsernameServiceForContext(context: AppContext) {
@@ -339,7 +363,7 @@ export const router = pub.router({
 
     requestClaimChallenge: pub.username.requestClaimChallenge.handler(
       async ({ input, context }) => {
-        const walletKey = `${input.chainType}:${input.walletAddress}`;
+        const walletKey = usernameClaimRateLimitWalletKey(input);
         const limit = identityRateLimiter.check({
           key: `${walletKey}:requestUsernameClaim`,
           limit: 10,
@@ -363,6 +387,7 @@ export const router = pub.router({
         windowMs: 60 * 60 * 1000,
       });
       if (!limit.allowed) throw apiError("RATE_LIMITED");
+      requireFillxSessionSecret(context);
       const updated = await createUsernameServiceForContext(
         context,
       ).claimUsername(input);
