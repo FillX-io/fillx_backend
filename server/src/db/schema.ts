@@ -162,9 +162,9 @@ export const usernameClaimChallenges = pgTable(
   "username_claim_challenges",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    user_id: uuid("user_id")
-      .notNull()
-      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    user_id: uuid("user_id").references(() => fillxUsers.id, {
+      onDelete: "cascade",
+    }),
     username: text("username").notNull(),
     wallet_address: text("wallet_address").notNull(),
     chain_type: text("chain_type").$type<ChainType>().notNull(),

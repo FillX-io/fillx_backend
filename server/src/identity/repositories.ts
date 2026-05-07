@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import {
   fillxUsers,
@@ -56,6 +56,15 @@ export function createUsersRepo(db: DbLike) {
             username,
             username_status: "generated" as UsernameStatus,
           })
+          .returning(),
+      );
+    },
+
+    async createClaimedUser(username: string): Promise<FillxUser> {
+      return firstOrThrow(
+        await db
+          .insert(fillxUsers)
+          .values({ username, username_status: "claimed" as UsernameStatus })
           .returning(),
       );
     },
@@ -232,7 +241,7 @@ export function createOrderlyAccountsRepo(db: DbLike) {
 export function createUsernameClaimsRepo(db: DbLike) {
   return {
     async createChallenge(input: {
-      userId: string;
+      userId: string | null;
       username: string;
       walletAddress: string;
       chainType: ChainType;
@@ -258,6 +267,19 @@ export function createUsernameClaimsRepo(db: DbLike) {
       );
     },
 
+    async findChallengeByIdForUpdate(
+      id: string,
+    ): Promise<UsernameClaimChallenge | undefined> {
+      return first(
+        await db
+          .select()
+          .from(usernameClaimChallenges)
+          .where(eq(usernameClaimChallenges.id, id))
+          .limit(1)
+          .for("update"),
+      );
+    },
+
     async findChallengeById(
       id: string,
     ): Promise<UsernameClaimChallenge | undefined> {
@@ -270,11 +292,21 @@ export function createUsernameClaimsRepo(db: DbLike) {
       );
     },
 
-    async consumeChallenge(id: string): Promise<void> {
-      await db
-        .update(usernameClaimChallenges)
-        .set({ consumed_at: new Date() })
-        .where(eq(usernameClaimChallenges.id, id));
+    async consumeChallengeIfUnused(
+      id: string,
+    ): Promise<UsernameClaimChallenge | undefined> {
+      return first(
+        await db
+          .update(usernameClaimChallenges)
+          .set({ consumed_at: new Date() })
+          .where(
+            and(
+              eq(usernameClaimChallenges.id, id),
+              isNull(usernameClaimChallenges.consumed_at),
+            ),
+          )
+          .returning(),
+      );
     },
 
     async insertClaimAudit(input: {

@@ -38,6 +38,15 @@ function makeRepos(): {
       findById: async (id) => users.get(id),
       findByUsername: async (username) =>
         Array.from(users.values()).find((user) => user.username === username),
+      createClaimedUser: async (username) => {
+        const user = makeUser({
+          id: `user-${users.size + 1}`,
+          username,
+          username_status: "claimed",
+        });
+        users.set(user.id, user);
+        return user;
+      },
       markUsernameClaimed: async ({ userId, username }) => {
         const user = users.get(userId);
         if (!user) throw new Error("missing user");
@@ -52,6 +61,12 @@ function makeRepos(): {
       },
     },
     wallets: {
+      findByWallet: async ({ chainType, walletAddress }) =>
+        wallets.find(
+          (wallet) =>
+            wallet.chain_type === chainType &&
+            wallet.wallet_address === walletAddress,
+        ),
       findPrimaryByUserId: async (userId) =>
         wallets.find((wallet) => wallet.user_id === userId && wallet.is_primary),
       createPrimaryWallet: async ({ userId, chainType, walletAddress }) => {
@@ -87,14 +102,16 @@ function makeRepos(): {
         return challenge;
       },
       findChallengeById: async (id) => challenges.get(id),
-      consumeChallenge: async (id) => {
+      findChallengeByIdForUpdate: async (id) => challenges.get(id),
+      consumeChallengeIfUnused: async (id) => {
         const challenge = challenges.get(id);
-        if (challenge) {
-          challenges.set(id, {
-            ...challenge,
-            consumed_at: new Date("2026-05-07T00:01:00.000Z"),
-          });
-        }
+        if (!challenge || challenge.consumed_at) return undefined;
+        const consumed = {
+          ...challenge,
+          consumed_at: new Date("2026-05-07T00:01:00.000Z"),
+        };
+        challenges.set(id, consumed);
+        return consumed;
       },
       insertClaimAudit: async (input) => {
         audits.push(input);
@@ -126,7 +143,7 @@ test("requestClaimChallenge stores a signed username claim message", async () =>
   });
 
   const challenge = await service.requestClaimChallenge({
-    userId: "user-1",
+    authenticatedUserId: "user-1",
     username: "alice_1",
     walletAddress: "0x0000000000000000000000000000000000000001",
     chainType: "evm",
@@ -139,6 +156,29 @@ test("requestClaimChallenge stores a signed username claim message", async () =>
   assert.match(challenge.message, /Nonce: nonce-1/);
 });
 
+test("requestClaimChallenge does not require a pre-existing user", async () => {
+  const { repos } = makeRepos();
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+  });
+
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  assert.equal(challenge.challengeId, "challenge-1");
+  assert.match(challenge.message, /Username: alice_1/);
+  assert.match(
+    challenge.message,
+    /Wallet: 0x0000000000000000000000000000000000000001/,
+  );
+});
+
 test("claimUsername verifies the challenge, creates the primary wallet, and marks the username claimed", async () => {
   const { repos, users, wallets, audits } = makeRepos();
   users.set("user-1", makeUser());
@@ -148,7 +188,7 @@ test("claimUsername verifies the challenge, creates the primary wallet, and mark
     verifySignature: async () => true,
   });
   const challenge = await service.requestClaimChallenge({
-    userId: "user-1",
+    authenticatedUserId: "user-1",
     username: "alice_1",
     walletAddress: "0x0000000000000000000000000000000000000001",
     chainType: "evm",
@@ -156,7 +196,6 @@ test("claimUsername verifies the challenge, creates the primary wallet, and mark
   });
 
   const user = await service.claimUsername({
-    userId: "user-1",
     challengeId: challenge.challengeId,
     signature: "0xsigned",
   });
@@ -166,4 +205,158 @@ test("claimUsername verifies the challenge, creates the primary wallet, and mark
   assert.equal(wallets.length, 1);
   assert.equal(wallets[0].wallet_address, "0x0000000000000000000000000000000000000001");
   assert.equal(audits.length, 1);
+});
+
+test("claimUsername creates a claimed wallet-backed user after valid wallet proof", async () => {
+  const { repos, users, wallets } = makeRepos();
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => true,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  const user = await service.claimUsername({
+    challengeId: challenge.challengeId,
+    signature: "0xsigned",
+  });
+
+  assert.equal(user.username, "alice_1");
+  assert.equal(user.username_status, "claimed");
+  assert.equal(users.size, 1);
+  assert.equal(wallets.length, 1);
+  assert.equal(wallets[0].user_id, user.id);
+});
+
+test("claimUsername rejects a replayed challenge", async () => {
+  const { repos } = makeRepos();
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => true,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  await service.claimUsername({
+    challengeId: challenge.challengeId,
+    signature: "0xsigned",
+  });
+
+  await assert.rejects(
+    service.claimUsername({
+      challengeId: challenge.challengeId,
+      signature: "0xsigned",
+    }),
+    /CHALLENGE_ALREADY_USED/,
+  );
+});
+
+test("claimUsername rejects an expired challenge without creating a user", async () => {
+  const { repos, users } = makeRepos();
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => true,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+  const expiredService = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:10:00.000Z"),
+    verifySignature: async () => true,
+  });
+
+  await assert.rejects(
+    expiredService.claimUsername({
+      challengeId: challenge.challengeId,
+      signature: "0xsigned",
+    }),
+    /CHALLENGE_EXPIRED/,
+  );
+  assert.equal(users.size, 0);
+});
+
+test("claimUsername rejects invalid signatures without consuming the challenge", async () => {
+  const { repos, challenges } = makeRepos();
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => false,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  await assert.rejects(
+    service.claimUsername({
+      challengeId: challenge.challengeId,
+      signature: "0xbad",
+    }),
+    /SIGNATURE_INVALID/,
+  );
+  assert.equal(challenges.get(challenge.challengeId)?.consumed_at, null);
+});
+
+test("claimUsername consumes the challenge atomically in the claim transaction", async () => {
+  const { repos, users, wallets, challenges } = makeRepos();
+  let consumeAttempts = 0;
+  repos.usernameClaims.consumeChallengeIfUnused = async (id) => {
+    consumeAttempts += 1;
+    const challenge = challenges.get(id);
+    if (!challenge || challenge.consumed_at) return undefined;
+    const consumed = {
+      ...challenge,
+      consumed_at: new Date("2026-05-07T00:01:00.000Z"),
+    };
+    challenges.set(id, consumed);
+    return consumed;
+  };
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => true,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  await service.claimUsername({
+    challengeId: challenge.challengeId,
+    signature: "0xsigned",
+  });
+  await assert.rejects(
+    service.claimUsername({
+      challengeId: challenge.challengeId,
+      signature: "0xsigned",
+    }),
+    /CHALLENGE_ALREADY_USED/,
+  );
+
+  assert.equal(consumeAttempts, 1);
+  assert.equal(users.size, 1);
+  assert.equal(wallets.length, 1);
 });

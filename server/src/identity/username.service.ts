@@ -21,12 +21,17 @@ export type UsernameServiceRepos = {
   users: {
     findById: (id: string) => Promise<FillxUser | undefined>;
     findByUsername: (username: string) => Promise<FillxUser | undefined>;
+    createClaimedUser: (username: string) => Promise<FillxUser>;
     markUsernameClaimed: (input: {
       userId: string;
       username: string;
     }) => Promise<FillxUser>;
   };
   wallets: {
+    findByWallet: (input: {
+      chainType: ChainType;
+      walletAddress: string;
+    }) => Promise<UserWallet | undefined>;
     findPrimaryByUserId: (userId: string) => Promise<UserWallet | undefined>;
     createPrimaryWallet: (input: {
       userId: string;
@@ -36,7 +41,7 @@ export type UsernameServiceRepos = {
   };
   usernameClaims: {
     createChallenge: (input: {
-      userId: string;
+      userId: string | null;
       username: string;
       walletAddress: string;
       chainType: ChainType;
@@ -48,7 +53,12 @@ export type UsernameServiceRepos = {
     findChallengeById: (
       id: string,
     ) => Promise<UsernameClaimChallenge | undefined>;
-    consumeChallenge: (id: string) => Promise<void>;
+    findChallengeByIdForUpdate: (
+      id: string,
+    ) => Promise<UsernameClaimChallenge | undefined>;
+    consumeChallengeIfUnused: (
+      id: string,
+    ) => Promise<UsernameClaimChallenge | undefined>;
     insertClaimAudit: (input: {
       userId: string;
       username: string;
@@ -118,15 +128,19 @@ export function createUsernameService(
     },
 
     async requestClaimChallenge(input: {
-      userId: string;
+      authenticatedUserId: string | null;
       username: string;
       walletAddress: string;
       chainType: ChainType;
       chainId: number | null;
     }): Promise<{ challengeId: string; expiresAt: string; message: string }> {
-      const user = await repos.users.findById(input.userId);
-      if (!user) throw apiError("USER_NOT_FOUND");
-      if (user.username_status === "claimed") {
+      const authenticatedUser = input.authenticatedUserId
+        ? await repos.users.findById(input.authenticatedUserId)
+        : undefined;
+      if (input.authenticatedUserId && !authenticatedUser) {
+        throw apiError("USER_NOT_FOUND");
+      }
+      if (authenticatedUser?.username_status === "claimed") {
         throw apiError("USERNAME_ALREADY_CLAIMED");
       }
 
@@ -138,16 +152,20 @@ export function createUsernameService(
         input.chainType,
         input.walletAddress,
       );
-      const primaryWallet = await repos.wallets.findPrimaryByUserId(input.userId);
-      if (
-        primaryWallet &&
-        (primaryWallet.wallet_address !== walletAddress ||
-          primaryWallet.chain_type !== input.chainType)
-      ) {
-        throw apiError(
-          "PRIMARY_WALLET_ALREADY_SET",
-          "This profile is already controlled by another wallet.",
+      if (authenticatedUser) {
+        const primaryWallet = await repos.wallets.findPrimaryByUserId(
+          authenticatedUser.id,
         );
+        if (
+          primaryWallet &&
+          (primaryWallet.wallet_address !== walletAddress ||
+            primaryWallet.chain_type !== input.chainType)
+        ) {
+          throw apiError(
+            "PRIMARY_WALLET_ALREADY_SET",
+            "This profile is already controlled by another wallet.",
+          );
+        }
       }
 
       const issuedAt = now();
@@ -168,7 +186,7 @@ export function createUsernameService(
       });
 
       const challenge = await repos.usernameClaims.createChallenge({
-        userId: input.userId,
+        userId: authenticatedUser?.id ?? null,
         username: validation.username,
         walletAddress,
         chainType: input.chainType,
@@ -186,59 +204,85 @@ export function createUsernameService(
     },
 
     async claimUsername(input: {
-      userId: string;
       challengeId: string;
       signature: string;
     }): Promise<FillxUser> {
-      const challenge = await repos.usernameClaims.findChallengeById(
-        input.challengeId,
-      );
-      if (!challenge) throw apiError("CHALLENGE_NOT_FOUND");
-      if (challenge.user_id !== input.userId) {
-        throw apiError("CHALLENGE_NOT_FOUND");
-      }
-      if (challenge.consumed_at) throw apiError("CHALLENGE_ALREADY_USED");
-      if (new Date(challenge.expires_at).getTime() <= now().getTime()) {
-        throw apiError("CHALLENGE_EXPIRED");
-      }
-
-      const isValid = await verifySignature({
-        chainType: challenge.chain_type,
-        walletAddress: challenge.wallet_address,
-        message: challenge.message,
-        signature: input.signature,
-      });
-      if (!isValid) throw apiError("SIGNATURE_INVALID");
-
       return repos.runTransaction(async (txRepos) => {
-        const primaryWallet = await txRepos.wallets.findPrimaryByUserId(
-          input.userId,
+        const challenge = await txRepos.usernameClaims.findChallengeByIdForUpdate(
+          input.challengeId,
         );
-        if (
-          primaryWallet &&
-          (primaryWallet.wallet_address !== challenge.wallet_address ||
-            primaryWallet.chain_type !== challenge.chain_type)
-        ) {
-          throw apiError("PRIMARY_WALLET_ALREADY_SET");
+        if (!challenge) throw apiError("CHALLENGE_NOT_FOUND");
+        if (challenge.consumed_at) throw apiError("CHALLENGE_ALREADY_USED");
+        if (new Date(challenge.expires_at).getTime() <= now().getTime()) {
+          throw apiError("CHALLENGE_EXPIRED");
         }
-        if (!primaryWallet) {
+
+        const isValid = await verifySignature({
+          chainType: challenge.chain_type,
+          walletAddress: challenge.wallet_address,
+          message: challenge.message,
+          signature: input.signature,
+        });
+        if (!isValid) throw apiError("SIGNATURE_INVALID");
+
+        const existingWallet = await txRepos.wallets.findByWallet({
+          chainType: challenge.chain_type,
+          walletAddress: challenge.wallet_address,
+        });
+        let user = existingWallet
+          ? await txRepos.users.findById(existingWallet.user_id)
+          : undefined;
+        if (!user && challenge.user_id) {
+          user = await txRepos.users.findById(challenge.user_id);
+        }
+
+        if (user?.username_status === "claimed") {
+          throw apiError("USERNAME_ALREADY_CLAIMED");
+        }
+
+        const existingUsername = await txRepos.users.findByUsername(
+          challenge.username,
+        );
+        if (existingUsername) throw apiError("USERNAME_TAKEN");
+
+        let updated: FillxUser;
+        if (user) {
+          const primaryWallet = await txRepos.wallets.findPrimaryByUserId(user.id);
+          if (
+            primaryWallet &&
+            (primaryWallet.wallet_address !== challenge.wallet_address ||
+              primaryWallet.chain_type !== challenge.chain_type)
+          ) {
+            throw apiError("PRIMARY_WALLET_ALREADY_SET");
+          }
+          if (!primaryWallet) {
+            await txRepos.wallets.createPrimaryWallet({
+              userId: user.id,
+              chainType: challenge.chain_type,
+              walletAddress: challenge.wallet_address,
+            });
+          }
+
+          updated = await txRepos.users.markUsernameClaimed({
+            userId: user.id,
+            username: challenge.username,
+          });
+        } else {
+          updated = await txRepos.users.createClaimedUser(challenge.username);
           await txRepos.wallets.createPrimaryWallet({
-            userId: input.userId,
+            userId: updated.id,
             chainType: challenge.chain_type,
             walletAddress: challenge.wallet_address,
           });
         }
 
-        const existing = await txRepos.users.findByUsername(challenge.username);
-        if (existing) throw apiError("USERNAME_TAKEN");
+        const consumed = await txRepos.usernameClaims.consumeChallengeIfUnused(
+          challenge.id,
+        );
+        if (!consumed) throw apiError("CHALLENGE_ALREADY_USED");
 
-        const updated = await txRepos.users.markUsernameClaimed({
-          userId: input.userId,
-          username: challenge.username,
-        });
-        await txRepos.usernameClaims.consumeChallenge(challenge.id);
         await txRepos.usernameClaims.insertClaimAudit({
-          userId: input.userId,
+          userId: updated.id,
           username: challenge.username,
           walletAddress: challenge.wallet_address,
           chainType: challenge.chain_type,
@@ -246,6 +290,7 @@ export function createUsernameService(
           messageHash: hashMessage(challenge.message),
           status: "accepted",
         });
+
         return updated;
       });
     },
