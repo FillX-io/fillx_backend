@@ -13,6 +13,11 @@ const FillxUserProfile = z.object({
   avatarUrl: z.string().nullable(),
   hasClaimedUsername: z.boolean(),
 });
+const GuestResponse = z.object({ isGuest: z.literal(true) });
+const CurrentUserResponse = z.object({
+  user: FillxUserProfile.nullable(),
+  guest: GuestResponse.nullable(),
+});
 const PublicWalletProfile = z.object({
   walletAddress: z.string(),
   userId: z.string(),
@@ -207,16 +212,7 @@ export const contract = oc.router({
 
   // ─── Identity ──────────────────────────────────────
   identity: oc.router({
-    getCurrentUser: oc
-      .input(
-        z
-          .object({
-            walletAddress: z.string().optional(),
-            chainType: ChainType.optional(),
-          })
-          .optional(),
-      )
-      .output(z.object({ user: FillxUserProfile })),
+    getCurrentUser: oc.output(CurrentUserResponse),
     updateDisplayName: oc
       .input(z.object({ displayName: z.string().max(50) }))
       .output(z.object({ user: FillxUserProfile })),
@@ -234,7 +230,6 @@ export const contract = oc.router({
     requestClaimChallenge: oc
       .input(
         z.object({
-          userId: z.string(),
           username: z.string(),
           walletAddress: z.string(),
           chainType: ChainType,
@@ -251,7 +246,6 @@ export const contract = oc.router({
     claim: oc
       .input(
         z.object({
-          userId: z.string(),
           challengeId: z.string(),
           signature: z.string(),
         }),

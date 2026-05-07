@@ -70,6 +70,8 @@ import {
   createUsernameService,
   type UsernameServiceRepos,
 } from "./identity/username.service.js";
+import { normalizeProfileLookupWallets } from "./identity/profile-lookup.js";
+import { setFillxSessionCookie, signFillxSession } from "./identity/session.js";
 import { normalizeWalletAddress } from "./identity/wallet.js";
 
 const pub = implement(contract).$context<AppContext>();
@@ -96,6 +98,60 @@ function requirePrivy(context: AppContext) {
     throw apiError("AUTH_REQUIRED");
   }
   return context.auth.privy;
+}
+
+function isSecureCookieEnv(context: AppContext): boolean {
+  return context.env.nodeEnv !== "development" && context.env.nodeEnv !== "test";
+}
+
+async function issueFillxSession(
+  context: AppContext,
+  userId: string,
+): Promise<void> {
+  if (!context.env.fillxJwtSecret) throw apiError("SESSION_NOT_CONFIGURED");
+  const token = await signFillxSession({
+    userId,
+    secret: context.env.fillxJwtSecret,
+  });
+  setFillxSessionCookie(context.resHeaders, token, {
+    secure: isSecureCookieEnv(context),
+  });
+}
+
+function currentUserAuthFromContext(context: AppContext) {
+  if (context.auth.type === "privy") {
+    return {
+      type: "privy" as const,
+      privyUserId: context.auth.privy.privyUserId,
+    };
+  }
+  if (context.auth.type === "fillx") {
+    return { type: "fillx" as const, userId: context.auth.session.userId };
+  }
+  return { type: "anonymous" as const };
+}
+
+async function authenticatedUserIdFromContext(
+  context: AppContext,
+): Promise<string | null> {
+  if (context.auth.type === "fillx") return context.auth.session.userId;
+
+  if (context.auth.type === "privy") {
+    const repos = createIdentityRepos(context.db);
+    const service = createIdentityService({
+      users: repos.users,
+      authIdentities: repos.authIdentities,
+    });
+    const current = await service.getCurrentUser({
+      auth: { type: "privy", privyUserId: context.auth.privy.privyUserId },
+    });
+    if (current.user) {
+      await issueFillxSession(context, current.user.id);
+      return current.user.id;
+    }
+  }
+
+  return null;
 }
 
 function createUsernameServiceForContext(context: AppContext) {
@@ -224,48 +280,41 @@ export const router = pub.router({
   // ─── Identity ──────────────────────────────────────
   identity: {
     getCurrentUser: pub.identity.getCurrentUser.handler(
-      async ({ input, context }) => {
+      async ({ context }) => {
         const repos = createIdentityRepos(context.db);
         const service = createIdentityService({
           users: repos.users,
           authIdentities: repos.authIdentities,
-          wallets: repos.wallets,
         });
-        const wallet =
-          input?.walletAddress && input.chainType
-            ? {
-                walletAddress: normalizeWalletAddress(
-                  input.chainType,
-                  input.walletAddress,
-                ),
-                chainType: input.chainType,
-              }
-            : undefined;
-        const currentUser = await service.getOrCreateCurrentUser({
-          privyUserId:
-            context.auth.type === "privy"
-              ? context.auth.privy.privyUserId
-              : undefined,
-          wallet,
+        const current = await service.getCurrentUser({
+          auth: currentUserAuthFromContext(context),
         });
-        return { user: serializeUser(currentUser) };
+        if (current.user && context.auth.type === "privy") {
+          await issueFillxSession(context, current.user.id);
+        }
+        return {
+          user: current.user ? serializeUser(current.user) : null,
+          guest: current.guest,
+        };
       },
     ),
 
     updateDisplayName: pub.identity.updateDisplayName.handler(
       async ({ input, context }) => {
-        const privy = requirePrivy(context);
         const repos = createIdentityRepos(context.db);
         const service = createIdentityService({
           users: repos.users,
           authIdentities: repos.authIdentities,
-          wallets: repos.wallets,
         });
-        const currentUser = await service.getOrCreateCurrentUser({
-          privyUserId: privy.privyUserId,
+        const current = await service.getCurrentUser({
+          auth: currentUserAuthFromContext(context),
         });
+        if (!current.user) throw apiError("AUTH_REQUIRED");
+        if (context.auth.type === "privy") {
+          await issueFillxSession(context, current.user.id);
+        }
         const updated = await service.updateDisplayName({
-          userId: currentUser.id,
+          userId: current.user.id,
           displayName: input.displayName,
         });
         return { user: serializeUser(updated) };
@@ -290,14 +339,18 @@ export const router = pub.router({
 
     requestClaimChallenge: pub.username.requestClaimChallenge.handler(
       async ({ input, context }) => {
+        const walletKey = `${input.chainType}:${input.walletAddress}`;
         const limit = identityRateLimiter.check({
-          key: `${input.userId}:requestUsernameClaim`,
+          key: `${walletKey}:requestUsernameClaim`,
           limit: 10,
           windowMs: 60 * 60 * 1000,
         });
         if (!limit.allowed) throw apiError("RATE_LIMITED");
         return createUsernameServiceForContext(context).requestClaimChallenge({
-          ...input,
+          authenticatedUserId: await authenticatedUserIdFromContext(context),
+          username: input.username,
+          walletAddress: input.walletAddress,
+          chainType: input.chainType,
           chainId: input.chainId ?? null,
         });
       },
@@ -305,7 +358,7 @@ export const router = pub.router({
 
     claim: pub.username.claim.handler(async ({ input, context }) => {
       const limit = identityRateLimiter.check({
-        key: `${input.userId}:claimUsername`,
+        key: `${context.ipAddress}:claimUsername`,
         limit: 10,
         windowMs: 60 * 60 * 1000,
       });
@@ -313,6 +366,7 @@ export const router = pub.router({
       const updated = await createUsernameServiceForContext(
         context,
       ).claimUsername(input);
+      await issueFillxSession(context, updated.id);
       return { user: serializeUser(updated) };
     }),
   },
@@ -323,7 +377,7 @@ export const router = pub.router({
         return {
           profiles: await getProfilesByWallets(
             context.db,
-            input.walletAddresses.map((address) => address.toLowerCase()),
+            normalizeProfileLookupWallets(input.walletAddresses),
           ),
         };
       },
@@ -337,13 +391,14 @@ export const router = pub.router({
       const identity = createIdentityService({
         users: repos.users,
         authIdentities: repos.authIdentities,
-        wallets: repos.wallets,
       });
-      const currentUser = await identity.getOrCreateCurrentUser({
-        privyUserId: privy.privyUserId,
+      const current = await identity.getCurrentUser({
+        auth: { type: "privy", privyUserId: privy.privyUserId },
       });
+      if (!current.user) throw apiError("AUTH_REQUIRED");
+      await issueFillxSession(context, current.user.id);
       await repos.orderlyAccounts.upsertOrderlyAccount({
-        userId: currentUser.id,
+        userId: current.user.id,
         orderlyAccountId: input.orderlyAccountId,
         orderlyAddress: normalizeWalletAddress("evm", input.orderlyAddress),
         brokerId: input.brokerId ?? null,
