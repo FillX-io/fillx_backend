@@ -66,6 +66,7 @@ Expected helper boundaries:
 - `e2e/helpers/server.ts`: start and stop an isolated HTTP server for a test.
 - `e2e/helpers/client.ts`: create an oRPC client with per-test headers.
 - `e2e/helpers/wallets.ts`: deterministic EVM and Solana wallets plus signing helpers.
+- `e2e/helpers/privy.ts`: generate a test Privy access token and matching verification key for the backend.
 
 The helpers should have small public APIs so individual test files do not duplicate setup details.
 
@@ -84,6 +85,7 @@ Required scenarios:
 - A challenge requested by one user cannot be claimed by another user.
 - Concurrent or sequential contention cannot claim an already-taken username.
 - A user whose primary wallet is already set cannot claim an incompatible primary wallet.
+- A Privy-authenticated user with an already-claimed wallet resolves to the existing wallet-backed profile, links the Privy DID to that user, and does not create a duplicate profile.
 - Profile lookup returns the claimed username and wallet data after a successful claim.
 
 The tests should avoid exhaustive validation-matrix coverage for every username regex edge. Those cases are better suited to unit tests.
@@ -95,7 +97,10 @@ The E2E tests should use the same identity mechanisms exposed by the API:
 - Anonymous/generated users should be created by calling `identity.getCurrentUser` through the test oRPC client, not by inserting users directly.
 - If the identity context uses headers or cookies for generated users, the E2E client helper owns one isolated credential jar per test and reuses it across calls in that test.
 - Wallet signatures should be generated deterministically by the test helpers.
-- Privy-specific protected routes should only be included if they are directly needed for username behavior. Otherwise, leave Privy coverage to a separate E2E spec.
+- Privy wallet coverage uses a valid mock access token instead of a production Privy token.
+- The Privy helper generates a test-controlled ES256 keypair with `jose`, exports the public key as SPKI for `PRIVY_JWT_VERIFICATION_KEY`, sets a test `PRIVY_APP_ID`, and signs a JWT with `iss: "privy.io"`, `aud` equal to the test app ID, `sub` set to a deterministic Privy DID, `sid`, `iat`, and `exp`.
+- The Privy E2E client sends the token as `Authorization: Bearer <token>`. Cookie-based `privy-token` coverage is excluded from this username suite because bearer and cookie tokens enter the same backend verifier.
+- Include Privy-specific protected routes only when they prove the wallet-backed username profile is reused. The required protected-route check is that after resolving a Privy user by wallet, a subsequent Privy-only call such as `identity.updateDisplayName` updates the same user.
 
 ## Error Handling
 
@@ -124,6 +129,15 @@ The primary happy path is:
 9. Test verifies API responses and persisted profile behavior.
 10. Test closes the server and drops the database.
 
+The Privy wallet path is:
+
+1. Test claims a username for a deterministic wallet.
+2. Test creates a valid mock Privy access token for a deterministic Privy DID.
+3. Test calls `identity.getCurrentUser` with the bearer token plus the same wallet address and chain type.
+4. Test asserts the returned user is the existing wallet-backed user, not a new generated user.
+5. Test calls `identity.updateDisplayName` with the bearer token and no wallet input.
+6. Test asserts the updated user is still the wallet-backed username profile, proving the Privy DID was linked to the existing user.
+
 ## Tooling and Configuration
 
 Add E2E scripts without changing the existing unit test command:
@@ -138,8 +152,20 @@ Required environment:
 Derived per test:
 
 - `DATABASE_URL`: application Postgres URL pointing at the unique test database.
+- `PRIVY_APP_ID`: deterministic test app ID for mock Privy tokens.
+- `PRIVY_JWT_VERIFICATION_KEY`: SPKI public key matching the test signing key.
 
 The E2E helpers should reject unsafe admin URLs and unsafe generated database names before issuing create or drop commands.
+
+## Research Notes
+
+Privy documents access tokens as ES256-signed JWTs that should be sent to backend APIs through either an `Authorization: Bearer <token>` header or the `privy-token` cookie. Privy also documents an automated-test pattern: construct a Privy-format JWT and sign it with a key controlled by the test suite instead of using a real production token.
+
+Sources:
+
+- https://docs.privy.io/recipes/mock-jwt
+- https://docs.privy.io/authentication/user-authentication/access-tokens
+- https://docs.privy.io/authentication/user-authentication/tokens
 
 ## Risks and Mitigations
 
@@ -147,6 +173,7 @@ The E2E helpers should reject unsafe admin URLs and unsafe generated database na
 - Server starts at import time: extract a server factory and keep production listen logic isolated.
 - Dropping a database fails because of open connections: close the app pool first, then terminate remaining connections from the admin connection before dropping.
 - Parallel execution races through shared process environment: run E2E tests serially in the initial implementation.
+- Privy-authenticated wallet users can split into duplicate profiles if the wallet-backed user is not linked to the Privy DID: include the Privy wallet path in the required E2E matrix.
 - Solana wallet lookup may expose address lowercasing bugs: keep a Solana profile lookup test in the required matrix.
 
 ## Acceptance Criteria
