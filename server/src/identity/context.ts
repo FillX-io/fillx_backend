@@ -13,6 +13,8 @@ export type AppContext = {
   auth: RequestAuth;
   requestId: string;
   ipAddress: string;
+  reqHeaders?: Headers;
+  resHeaders?: Headers;
 };
 
 function headersFromIncomingMessage(req: IncomingMessage): Headers {
@@ -36,6 +38,7 @@ export async function createContext(req: IncomingMessage): Promise<AppContext> {
     requestId: crypto.randomUUID(),
     ipAddress:
       headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown",
+    reqHeaders: headers,
   } as AppContext;
 
   Object.defineProperty(context, "db", {
