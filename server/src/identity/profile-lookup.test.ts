@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import bs58 from "bs58";
+import nacl from "tweetnacl";
 import { normalizeProfileLookupWallets } from "./profile-lookup.js";
 
-const solanaAddress = "11111111111111111111111111111111";
+const solanaSecret = Uint8Array.from(
+  Array.from({ length: 32 }, (_, index) => index + 1),
+);
+const solanaKeypair = nacl.sign.keyPair.fromSeed(solanaSecret);
+const solanaAddress = bs58.encode(solanaKeypair.publicKey);
 
 test("normalizeProfileLookupWallets lowercases EVM addresses", () => {
   assert.deepEqual(
@@ -23,6 +29,7 @@ test("normalizeProfileLookupWallets detects uppercase EVM prefixes", () => {
 });
 
 test("normalizeProfileLookupWallets preserves valid Solana base58 addresses", () => {
+  assert.notEqual(solanaAddress, solanaAddress.toLowerCase());
   assert.deepEqual(normalizeProfileLookupWallets([solanaAddress]), [
     solanaAddress,
   ]);
