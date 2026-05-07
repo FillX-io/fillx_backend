@@ -8,10 +8,11 @@ export type IdentityRepos = {
     findById?: (id: string) => Promise<FillxUser | undefined>;
     findByUsername?: (username: string) => Promise<FillxUser | undefined>;
     createGeneratedUser?: (username: string) => Promise<FillxUser>;
-    updateDisplayName: (input: {
+    updateProfile: (input: {
       userId: string;
       displayName?: string | null;
       avatarUrl?: string | null;
+      nationality?: string | null;
     }) => Promise<FillxUser>;
   };
   authIdentities?: {
@@ -35,6 +36,51 @@ export type CurrentUserResult = {
   user: FillxUser | null;
   guest: { isGuest: true } | null;
 };
+
+function normalizeDisplayName(input: string | null): string | null {
+  if (input === null) return null;
+
+  const displayName = input.trim();
+  if (displayName.length > 50) {
+    throw new Error("INVALID_DISPLAY_NAME");
+  }
+  return displayName.length > 0 ? displayName : null;
+}
+
+function normalizeAvatarUrl(input: string | null): string | null {
+  if (input === null) return null;
+
+  const avatarUrl = input.trim();
+  if (avatarUrl.length > 2048) {
+    throw new Error("INVALID_AVATAR_URL");
+  }
+  if (avatarUrl.length === 0) return null;
+
+  try {
+    const url = new URL(avatarUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("INVALID_AVATAR_URL");
+    }
+  } catch {
+    throw new Error("INVALID_AVATAR_URL");
+  }
+
+  return avatarUrl;
+}
+
+function normalizeNationality(input: string | null): string | null {
+  if (input === null) return null;
+
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return null;
+
+  const nationality = trimmed.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(nationality)) {
+    throw new Error("INVALID_NATIONALITY");
+  }
+
+  return nationality;
+}
 
 export function createIdentityService(
   repos: IdentityRepos,
@@ -93,48 +139,37 @@ export function createIdentityService(
       return { user: created, guest: null };
     },
 
-    async updateDisplayName(input: {
+    async updateProfile(input: {
       userId: string;
       displayName?: string | null;
       avatarUrl?: string | null;
+      nationality?: string | null;
     }): Promise<FillxUser> {
       const update: {
         userId: string;
         displayName?: string | null;
         avatarUrl?: string | null;
+        nationality?: string | null;
       } = { userId: input.userId };
 
-      if ("displayName" in input) {
-        const displayName = input.displayName?.trim() ?? "";
-        if (displayName.length > 50) {
-          throw new Error("INVALID_DISPLAY_NAME");
-        }
-        update.displayName = displayName.length > 0 ? displayName : null;
+      if (input.displayName !== undefined) {
+        update.displayName = normalizeDisplayName(input.displayName);
+      }
+      if (input.avatarUrl !== undefined) {
+        update.avatarUrl = normalizeAvatarUrl(input.avatarUrl);
+      }
+      if (input.nationality !== undefined) {
+        update.nationality = normalizeNationality(input.nationality);
+      }
+      if (
+        update.displayName === undefined &&
+        update.avatarUrl === undefined &&
+        update.nationality === undefined
+      ) {
+        throw new Error("PROFILE_UPDATE_EMPTY");
       }
 
-      if ("avatarUrl" in input) {
-        const avatarUrl = input.avatarUrl?.trim() ?? "";
-        if (avatarUrl.length > 2048) {
-          throw new Error("INVALID_AVATAR_URL");
-        }
-        if (avatarUrl.length > 0) {
-          try {
-            const url = new URL(avatarUrl);
-            if (url.protocol !== "http:" && url.protocol !== "https:") {
-              throw new Error("INVALID_AVATAR_URL");
-            }
-          } catch {
-            throw new Error("INVALID_AVATAR_URL");
-          }
-        }
-        update.avatarUrl = avatarUrl.length > 0 ? avatarUrl : null;
-      }
-
-      if (!("displayName" in update) && !("avatarUrl" in update)) {
-        throw new Error("INVALID_DISPLAY_NAME");
-      }
-
-      return repos.users.updateDisplayName(update);
+      return repos.users.updateProfile(update);
     },
   };
 }

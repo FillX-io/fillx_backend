@@ -98,31 +98,35 @@ export function createUsersRepo(db: DbLike) {
       );
     },
 
-    async updateDisplayName(input: {
+    async updateProfile(input: {
       userId: string;
       displayName?: string | null;
       avatarUrl?: string | null;
+      nationality?: string | null;
     }): Promise<FillxUser> {
-      const update: Partial<{
-        display_name: string | null;
-        avatar_url: string | null;
+      const values: {
+        display_name?: string | null;
+        avatar_url?: string | null;
+        nationality?: string | null;
         updated_at: Date;
-      }> = {
+      } = {
         updated_at: new Date(),
       };
 
-      if ("displayName" in input) {
-        update.display_name = input.displayName ?? null;
+      if (input.displayName !== undefined) {
+        values.display_name = input.displayName;
       }
-
-      if ("avatarUrl" in input) {
-        update.avatar_url = input.avatarUrl ?? null;
+      if (input.avatarUrl !== undefined) {
+        values.avatar_url = input.avatarUrl;
+      }
+      if (input.nationality !== undefined) {
+        values.nationality = input.nationality;
       }
 
       return firstOrThrow(
         await db
           .update(fillxUsers)
-          .set(update)
+          .set(values)
           .where(eq(fillxUsers.id, input.userId))
           .returning(),
       );

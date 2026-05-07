@@ -27,7 +27,7 @@ test("getCurrentUser returns a guest response without creating a user for anonym
         createCount += 1;
         return makeUser();
       },
-      updateDisplayName: async () => {
+      updateProfile: async () => {
         throw new Error("should not update user");
       },
     },
@@ -48,7 +48,7 @@ test("getCurrentUser returns an existing FillX session user", async () => {
       createGeneratedUser: async () => {
         throw new Error("should not create user");
       },
-      updateDisplayName: async () => {
+      updateProfile: async () => {
         throw new Error("should not update user");
       },
     },
@@ -70,7 +70,7 @@ test("getCurrentUser returns an existing Privy-linked user", async () => {
       createGeneratedUser: async () => {
         throw new Error("should not create user");
       },
-      updateDisplayName: async () => {
+      updateProfile: async () => {
         throw new Error("should not update user");
       },
     },
@@ -101,7 +101,7 @@ test("getCurrentUser creates a generated user only for verified Privy auth", asy
           ...created,
           username,
         }),
-        updateDisplayName: async () => {
+        updateProfile: async () => {
           throw new Error("should not update user");
         },
       },
@@ -127,33 +127,58 @@ test("getCurrentUser creates a generated user only for verified Privy auth", asy
   ]);
 });
 
-test("updateDisplayName trims and updates display name with avatar URL", async () => {
-  const updated = makeUser({
-    display_name: "FillX Trader",
-    avatar_url: "https://example.com/avatar.png",
-  });
-  const calls: Array<{
+function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
+  let stored = initialUser;
+  const updates: Array<{
     userId: string;
     displayName?: string | null;
     avatarUrl?: string | null;
+    nationality?: string | null;
   }> = [];
+
   const service = createIdentityService({
     users: {
-      updateDisplayName: async (input) => {
-        calls.push(input);
-        return updated;
+      findById: async (id) => (id === stored.id ? stored : undefined),
+      findByUsername: async () => undefined,
+      createGeneratedUser: async () => {
+        throw new Error("should not create user");
+      },
+      updateProfile: async (input) => {
+        updates.push(input);
+        stored = {
+          ...stored,
+          display_name:
+            input.displayName === undefined ? stored.display_name : input.displayName,
+          avatar_url:
+            input.avatarUrl === undefined ? stored.avatar_url : input.avatarUrl,
+          nationality:
+            input.nationality === undefined ? stored.nationality : input.nationality,
+          updated_at: new Date("2026-05-07T00:01:00.000Z"),
+        };
+        return stored;
       },
     },
   });
 
-  const result = await service.updateDisplayName({
+  return {
+    service,
+    updates,
+    getStored: () => stored,
+  };
+}
+
+test("updateProfile trims and updates display name with avatar URL", async () => {
+  const { service, updates } = makeProfileUpdateService();
+
+  const result = await service.updateProfile({
     userId: "user-1",
     displayName: " FillX Trader ",
     avatarUrl: " https://example.com/avatar.png ",
   });
 
-  assert.equal(result, updated);
-  assert.deepEqual(calls, [
+  assert.equal(result.display_name, "FillX Trader");
+  assert.equal(result.avatar_url, "https://example.com/avatar.png");
+  assert.deepEqual(updates, [
     {
       userId: "user-1",
       displayName: "FillX Trader",
@@ -162,31 +187,112 @@ test("updateDisplayName trims and updates display name with avatar URL", async (
   ]);
 });
 
-test("updateDisplayName allows clearing avatar URL without changing display name", async () => {
-  const updated = makeUser({ avatar_url: null });
-  const calls: Array<{
-    userId: string;
-    displayName?: string | null;
-    avatarUrl?: string | null;
-  }> = [];
-  const service = createIdentityService({
-    users: {
-      updateDisplayName: async (input) => {
-        calls.push(input);
-        return updated;
-      },
-    },
-  });
+test("updateProfile allows clearing avatar URL without changing display name", async () => {
+  const { service, updates } = makeProfileUpdateService(
+    makeUser({ display_name: "Existing", avatar_url: "https://example.com/a.png" }),
+  );
 
-  await service.updateDisplayName({
+  const result = await service.updateProfile({
     userId: "user-1",
     avatarUrl: null,
   });
 
-  assert.deepEqual(calls, [
-    {
-      userId: "user-1",
-      avatarUrl: null,
-    },
+  assert.equal(result.display_name, "Existing");
+  assert.equal(result.avatar_url, null);
+  assert.deepEqual(updates, [{ userId: "user-1", avatarUrl: null }]);
+});
+
+test("updateProfile normalizes lowercase nationality to uppercase", async () => {
+  const { service, updates } = makeProfileUpdateService();
+
+  const result = await service.updateProfile({
+    userId: "user-1",
+    nationality: "us",
+  });
+
+  assert.equal(result.nationality, "US");
+  assert.deepEqual(updates, [{ userId: "user-1", nationality: "US" }]);
+});
+
+test("updateProfile accepts uppercase nationality unchanged", async () => {
+  const { service, updates } = makeProfileUpdateService();
+
+  const result = await service.updateProfile({
+    userId: "user-1",
+    nationality: "NG",
+  });
+
+  assert.equal(result.nationality, "NG");
+  assert.deepEqual(updates, [{ userId: "user-1", nationality: "NG" }]);
+});
+
+test("updateProfile clears nationality with empty string or null", async () => {
+  const { service, updates } = makeProfileUpdateService(
+    makeUser({ nationality: "JP" }),
+  );
+
+  const emptyResult = await service.updateProfile({
+    userId: "user-1",
+    nationality: "   ",
+  });
+  const nullResult = await service.updateProfile({
+    userId: "user-1",
+    nationality: null,
+  });
+
+  assert.equal(emptyResult.nationality, null);
+  assert.equal(nullResult.nationality, null);
+  assert.deepEqual(updates, [
+    { userId: "user-1", nationality: null },
+    { userId: "user-1", nationality: null },
   ]);
+});
+
+test("updateProfile rejects invalid nationality before writing", async () => {
+  const { service, updates } = makeProfileUpdateService();
+
+  await assert.rejects(
+    service.updateProfile({ userId: "user-1", nationality: "usa" }),
+    /INVALID_NATIONALITY/,
+  );
+  await assert.rejects(
+    service.updateProfile({ userId: "user-1", nationality: "1!" }),
+    /INVALID_NATIONALITY/,
+  );
+
+  assert.deepEqual(updates, []);
+});
+
+test("updateProfile preserves omitted fields and trims display name", async () => {
+  const { service } = makeProfileUpdateService(
+    makeUser({ display_name: "Existing", nationality: "BR" }),
+  );
+
+  const displayNameResult = await service.updateProfile({
+    userId: "user-1",
+    displayName: "  New Display  ",
+  });
+  const nationalityResult = await service.updateProfile({
+    userId: "user-1",
+    nationality: "ca",
+  });
+
+  assert.equal(displayNameResult.display_name, "New Display");
+  assert.equal(displayNameResult.nationality, "BR");
+  assert.equal(nationalityResult.display_name, "New Display");
+  assert.equal(nationalityResult.nationality, "CA");
+});
+
+test("updateProfile clears display name with null", async () => {
+  const { service, updates } = makeProfileUpdateService(
+    makeUser({ display_name: "Existing" }),
+  );
+
+  const result = await service.updateProfile({
+    userId: "user-1",
+    displayName: null,
+  });
+
+  assert.equal(result.display_name, null);
+  assert.deepEqual(updates, [{ userId: "user-1", displayName: null }]);
 });
