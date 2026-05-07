@@ -11,7 +11,9 @@
     "build": "yarn workspace @fillx/shared build && yarn workspace @fillx/server build && yarn workspace @fillx/client build",
     "lint": "oxlint shared/ server/ client/",
     "fmt": "oxlint --fix shared/ server/ client/",
-    "check": "yarn workspaces foreach run check"
+    "check": "yarn workspace @fillx/shared run check && yarn workspace @fillx/server run check && yarn workspace @fillx/client run check && yarn check:e2e",
+    "check:e2e": "tsc --noEmit -p e2e/tsconfig.json",
+    "test:e2e": "yarn workspace @fillx/server test:e2e"
   },
   "devDependencies": {
     "oxlint": "^0.16.0",
