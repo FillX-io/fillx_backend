@@ -7,15 +7,28 @@ import {
   type RequestAuth,
 } from "./auth.js";
 
+export type UserIdentity =
+  | { type: "anonymous" }
+  | { type: "fillx"; userId: string };
+
 export type AppContext = {
   db: Db;
   env: IdentityEnv;
   auth: RequestAuth;
+  userIdentity: UserIdentity;
   requestId: string;
   ipAddress: string;
   reqHeaders?: Headers;
   resHeaders?: Headers;
 };
+
+export function userIdentityFromAuth(auth: RequestAuth): UserIdentity {
+  if (auth.type === "fillx") {
+    return { type: "fillx", userId: auth.session.userId };
+  }
+
+  return { type: "anonymous" };
+}
 
 function headersFromIncomingMessage(req: IncomingMessage): Headers {
   const headers = new Headers();
@@ -32,9 +45,11 @@ function headersFromIncomingMessage(req: IncomingMessage): Headers {
 export async function createContext(req: IncomingMessage): Promise<AppContext> {
   const headers = headersFromIncomingMessage(req);
   const env = getIdentityEnv();
+  const auth = await getRequestAuth(headers, env);
   const context = {
     env,
-    auth: await getRequestAuth(headers, env),
+    auth,
+    userIdentity: userIdentityFromAuth(auth),
     requestId: crypto.randomUUID(),
     ipAddress:
       headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown",

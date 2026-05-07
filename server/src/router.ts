@@ -1,6 +1,3 @@
-import { implement } from "@orpc/server";
-import { contract } from "@fillx/shared";
-
 import { fetchEarthquakes } from "./services/earthquakes.js";
 import { fetchCoingecko } from "./services/coingecko.js";
 import { fetchYahooFinance } from "./services/yahoo-finance.js";
@@ -23,11 +20,6 @@ import { fetchUnhcrPopulation } from "./services/unhcr-population.js";
 import { fetchRiskScores } from "./services/risk-scores.js";
 import { fetchTheaterPosture } from "./services/theater-posture.js";
 import { checkAnomaly, updateBaselines } from "./services/temporal-baseline.js";
-import { classifyEvent } from "./services/classify-event.js";
-import { classifyBatch } from "./services/classify-batch.js";
-import { getCountryIntel } from "./services/country-intel.js";
-import { groqSummarize } from "./services/groq-summarize.js";
-import { openrouterSummarize } from "./services/openrouter-summarize.js";
 import { getClimateAnomalies } from "./services/climate-anomalies.js";
 import { getFirmsFires } from "./services/firms-fires.js";
 import { fetchRssFeed } from "./services/rss-proxy.js";
@@ -58,143 +50,9 @@ import { fetchWingbitsBatch } from "./services/wingbits-batch.js";
 import { fetchEiaPetroleum } from "./services/eia.js";
 import { fetchFwdStartRss } from "./services/fwdstart.js";
 import { trackIpConnection } from "./services/track-ip-connection.js";
-import type { AppContext } from "./identity/context.js";
-import { apiError } from "./identity/errors.js";
-import { createIdentityService } from "./identity/identity.service.js";
-import { identityRateLimiter } from "./identity/rate-limit.js";
-import {
-  createIdentityRepos,
-  getProfilesByWallets,
-} from "./identity/repositories.js";
-import {
-  createUsernameService,
-  type UsernameServiceRepos,
-} from "./identity/username.service.js";
-import { normalizeProfileLookupWallets } from "./identity/profile-lookup.js";
-import { setFillxSessionCookie, signFillxSession } from "./identity/session.js";
-import { normalizeWalletAddress } from "./identity/wallet.js";
-
-const pub = implement(contract).$context<AppContext>();
-
-function serializeUser(user: {
-  id: string;
-  username: string;
-  username_status: "generated" | "claimed";
-  display_name: string | null;
-  avatar_url: string | null;
-}) {
-  return {
-    id: user.id,
-    username: user.username,
-    usernameStatus: user.username_status,
-    displayName: user.display_name,
-    avatarUrl: user.avatar_url,
-    hasClaimedUsername: user.username_status === "claimed",
-  };
-}
-
-function requirePrivy(context: AppContext) {
-  if (context.auth.type !== "privy") {
-    throw apiError("AUTH_REQUIRED");
-  }
-  return context.auth.privy;
-}
-
-function isSecureCookieEnv(context: AppContext): boolean {
-  return context.env.nodeEnv !== "development" && context.env.nodeEnv !== "test";
-}
-
-function requireFillxSessionSecret(context: AppContext): string {
-  if (!context.env.fillxJwtSecret) throw apiError("SESSION_NOT_CONFIGURED");
-  return context.env.fillxJwtSecret;
-}
-
-async function issueFillxSession(
-  context: AppContext,
-  userId: string,
-): Promise<void> {
-  const secret = requireFillxSessionSecret(context);
-  const token = await signFillxSession({
-    userId,
-    secret,
-  });
-  setFillxSessionCookie(context.resHeaders, token, {
-    secure: isSecureCookieEnv(context),
-  });
-}
-
-function currentUserAuthFromContext(context: AppContext) {
-  if (context.auth.type === "privy") {
-    return {
-      type: "privy" as const,
-      privyUserId: context.auth.privy.privyUserId,
-    };
-  }
-  if (context.auth.type === "fillx") {
-    return { type: "fillx" as const, userId: context.auth.session.userId };
-  }
-  return { type: "anonymous" as const };
-}
-
-async function authenticatedUserIdFromContext(
-  context: AppContext,
-): Promise<string | null> {
-  if (context.auth.type === "fillx") return context.auth.session.userId;
-
-  if (context.auth.type === "privy") {
-    requireFillxSessionSecret(context);
-    const repos = createIdentityRepos(context.db);
-    const service = createIdentityService({
-      users: repos.users,
-      authIdentities: repos.authIdentities,
-    });
-    const current = await service.getCurrentUser({
-      auth: { type: "privy", privyUserId: context.auth.privy.privyUserId },
-    });
-    if (current.user) {
-      await issueFillxSession(context, current.user.id);
-      return current.user.id;
-    }
-  }
-
-  return null;
-}
-
-function usernameClaimRateLimitWalletKey(input: {
-  chainType: "evm" | "solana";
-  walletAddress: string;
-}): string {
-  const rawKey = `${input.chainType}:${input.walletAddress}`;
-  try {
-    const walletAddress =
-      input.chainType === "evm"
-        ? input.walletAddress.trim().replace(/^0X/, "0x")
-        : input.walletAddress.trim();
-    return `${input.chainType}:${normalizeWalletAddress(
-      input.chainType,
-      walletAddress,
-    )}`;
-  } catch {
-    return rawKey;
-  }
-}
-
-function createUsernameServiceForContext(context: AppContext) {
-  const makeRepos = (db: AppContext["db"]): UsernameServiceRepos => {
-    const repos = createIdentityRepos(db);
-    return {
-      users: repos.users,
-      wallets: repos.wallets,
-      usernameClaims: repos.usernameClaims,
-      runTransaction: <T>(fn: (repos: UsernameServiceRepos) => Promise<T>) =>
-        context.db.transaction(async (tx) =>
-          fn(makeRepos(tx as unknown as AppContext["db"])),
-        ),
-    };
-  };
-
-  return createUsernameService(makeRepos(context.db));
-}
+import { aiRoutes } from "./routes/ai.js";
+import { identityRoutes } from "./routes/identity.js";
+import { pub } from "./routes/procedures.js";
 
 export const router = pub.router({
   health: pub.health.handler(async () => ({ status: "ok" as const })),
@@ -234,23 +92,7 @@ export const router = pub.router({
   }),
 
   // ─── LLM ───────────────────────────────────────────
-  classifyEvent: pub.classifyEvent.handler(async ({ input }) => await classifyEvent(input as any)),
-  classifyBatch: pub.classifyBatch.handler(async ({ input }) => await classifyBatch(input as any)),
-  countryIntel: pub.countryIntel.handler(async ({ input }) => await getCountryIntel({ country: input.country, code: input.country, context: input.context })),
-  groqSummarize: pub.groqSummarize.handler(async ({ input }) => await groqSummarize({
-    headlines: input.headlines ?? [],
-    mode: input.mode,
-    geoContext: input.geoContext,
-    variant: input.variant,
-    lang: input.lang ?? input.language,
-  })),
-  openrouterSummarize: pub.openrouterSummarize.handler(async ({ input }) => await openrouterSummarize({
-    headlines: input.headlines ?? [],
-    mode: input.mode,
-    geoContext: input.geoContext,
-    variant: input.variant,
-    lang: input.lang ?? input.language,
-  })),
+  ...aiRoutes,
 
   // ─── Climate & Environment ─────────────────────────
   climateAnomalies: pub.climateAnomalies.handler(async () => await getClimateAnomalies()),
@@ -303,142 +145,7 @@ export const router = pub.router({
   fwdstart: pub.fwdstart.handler(async () => await fetchFwdStartRss()),
 
   // ─── Identity ──────────────────────────────────────
-  identity: {
-    getCurrentUser: pub.identity.getCurrentUser.handler(
-      async ({ context }) => {
-        if (context.auth.type === "privy") {
-          requireFillxSessionSecret(context);
-        }
-        const repos = createIdentityRepos(context.db);
-        const service = createIdentityService({
-          users: repos.users,
-          authIdentities: repos.authIdentities,
-        });
-        const current = await service.getCurrentUser({
-          auth: currentUserAuthFromContext(context),
-        });
-        if (current.user && context.auth.type === "privy") {
-          await issueFillxSession(context, current.user.id);
-        }
-        return {
-          user: current.user ? serializeUser(current.user) : null,
-          guest: current.guest,
-        };
-      },
-    ),
-
-    updateDisplayName: pub.identity.updateDisplayName.handler(
-      async ({ input, context }) => {
-        if (context.auth.type === "privy") {
-          requireFillxSessionSecret(context);
-        }
-        const repos = createIdentityRepos(context.db);
-        const service = createIdentityService({
-          users: repos.users,
-          authIdentities: repos.authIdentities,
-        });
-        const current = await service.getCurrentUser({
-          auth: currentUserAuthFromContext(context),
-        });
-        if (!current.user) throw apiError("AUTH_REQUIRED");
-        if (context.auth.type === "privy") {
-          await issueFillxSession(context, current.user.id);
-        }
-        const updated = await service.updateDisplayName({
-          userId: current.user.id,
-          displayName: input.displayName,
-        });
-        return { user: serializeUser(updated) };
-      },
-    ),
-  },
-
-  username: {
-    checkAvailable: pub.username.checkAvailable.handler(
-      async ({ input, context }) => {
-        const limit = identityRateLimiter.check({
-          key: `${context.ipAddress}:checkUsernameAvailable`,
-          limit: 60,
-          windowMs: 60 * 60 * 1000,
-        });
-        if (!limit.allowed) throw apiError("RATE_LIMITED");
-        return createUsernameServiceForContext(context).checkAvailable(
-          input.username,
-        );
-      },
-    ),
-
-    requestClaimChallenge: pub.username.requestClaimChallenge.handler(
-      async ({ input, context }) => {
-        const walletKey = usernameClaimRateLimitWalletKey(input);
-        const limit = identityRateLimiter.check({
-          key: `${walletKey}:requestUsernameClaim`,
-          limit: 10,
-          windowMs: 60 * 60 * 1000,
-        });
-        if (!limit.allowed) throw apiError("RATE_LIMITED");
-        return createUsernameServiceForContext(context).requestClaimChallenge({
-          authenticatedUserId: await authenticatedUserIdFromContext(context),
-          username: input.username,
-          walletAddress: input.walletAddress,
-          chainType: input.chainType,
-          chainId: input.chainId ?? null,
-        });
-      },
-    ),
-
-    claim: pub.username.claim.handler(async ({ input, context }) => {
-      const limit = identityRateLimiter.check({
-        key: `${context.ipAddress}:claimUsername`,
-        limit: 10,
-        windowMs: 60 * 60 * 1000,
-      });
-      if (!limit.allowed) throw apiError("RATE_LIMITED");
-      requireFillxSessionSecret(context);
-      const updated = await createUsernameServiceForContext(
-        context,
-      ).claimUsername(input);
-      await issueFillxSession(context, updated.id);
-      return { user: serializeUser(updated) };
-    }),
-  },
-
-  profile: {
-    getByWallets: pub.profile.getByWallets.handler(
-      async ({ input, context }) => {
-        return {
-          profiles: await getProfilesByWallets(
-            context.db,
-            normalizeProfileLookupWallets(input.walletAddresses),
-          ),
-        };
-      },
-    ),
-  },
-
-  orderly: {
-    linkAccount: pub.orderly.linkAccount.handler(async ({ input, context }) => {
-      const privy = requirePrivy(context);
-      requireFillxSessionSecret(context);
-      const repos = createIdentityRepos(context.db);
-      const identity = createIdentityService({
-        users: repos.users,
-        authIdentities: repos.authIdentities,
-      });
-      const current = await identity.getCurrentUser({
-        auth: { type: "privy", privyUserId: privy.privyUserId },
-      });
-      if (!current.user) throw apiError("AUTH_REQUIRED");
-      await issueFillxSession(context, current.user.id);
-      await repos.orderlyAccounts.upsertOrderlyAccount({
-        userId: current.user.id,
-        orderlyAccountId: input.orderlyAccountId,
-        orderlyAddress: normalizeWalletAddress("evm", input.orderlyAddress),
-        brokerId: input.brokerId ?? null,
-      });
-      return { ok: true as const };
-    }),
-  },
+  ...identityRoutes,
 
   // ─── Anti-Fraud ────────────────────────────────────
   trackIpConnection: pub.trackIpConnection.handler(
