@@ -32,6 +32,7 @@ function serializeUser(user: {
   username_status: "generated" | "claimed";
   display_name: string | null;
   avatar_url: string | null;
+  nationality: string | null;
   primaryWallet?: {
     chainType: "evm" | "solana";
     walletAddress: string;
@@ -44,6 +45,7 @@ function serializeUser(user: {
     usernameStatus: user.username_status,
     displayName: user.display_name,
     avatarUrl: user.avatar_url,
+    nationality: user.nationality,
     hasClaimedUsername: user.username_status === "claimed",
     primaryWallet: user.primaryWallet ?? null,
   };
@@ -55,6 +57,7 @@ function serializePublicProfile(profile: {
   usernameStatus: "generated" | "claimed";
   displayName: string | null;
   avatarUrl: string | null;
+  nationality: string | null;
   primaryWallet: {
     chainType: "evm" | "solana";
     walletAddress: string;
@@ -67,6 +70,7 @@ function serializePublicProfile(profile: {
     usernameStatus: profile.usernameStatus,
     displayName: profile.displayName,
     avatarUrl: profile.avatarUrl,
+    nationality: profile.nationality,
     primaryWallet: profile.primaryWallet,
   };
 }
@@ -265,10 +269,11 @@ export const identityRoutes = {
             users: repos.users,
             authIdentities: repos.authIdentities,
           });
-          const updated = await service.updateDisplayName({
+          const updated = await service.updateProfile({
             userId: user.id,
             displayName: input.displayName,
             avatarUrl: input.avatarUrl,
+            nationality: input.nationality,
           });
           return { user: serializeUser(updated) };
         }),

@@ -29,6 +29,7 @@ export type FillxPublicProfile = {
   usernameStatus: "generated" | "claimed";
   displayName: string | null;
   avatarUrl: string | null;
+  nationality: string | null;
   primaryWallet: FillxPrimaryWalletProfile;
 };
 
@@ -246,6 +247,7 @@ export function createWalletSessionService(
       usernameStatus: user.username_status,
       displayName: user.display_name,
       avatarUrl: user.avatar_url,
+      nationality: user.nationality,
       primaryWallet: {
         chainType: wallet.chain_type,
         walletAddress: wallet.wallet_address,

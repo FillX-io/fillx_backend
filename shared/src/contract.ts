@@ -16,6 +16,7 @@ const FillxUserProfile = z.object({
   usernameStatus: UsernameStatus,
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  nationality: z.string().nullable(),
   hasClaimedUsername: z.boolean(),
   primaryWallet: FillxPrimaryWallet.nullable(),
 });
@@ -26,6 +27,7 @@ const PublicFillxProfile = z.object({
   usernameStatus: UsernameStatus,
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  nationality: z.string().nullable(),
   primaryWallet: FillxPrimaryWallet,
 });
 const CurrentUserResponse = z.object({
@@ -48,6 +50,7 @@ const PublicWalletProfile = z.object({
   usernameStatus: UsernameStatus,
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  nationality: z.string().nullable(),
 });
 
 export const contract = oc.router({
@@ -265,6 +268,7 @@ export const contract = oc.router({
         z.object({
           displayName: z.string().max(50).nullable().optional(),
           avatarUrl: z.string().url().max(2048).nullable().optional(),
+          nationality: z.string().nullable().optional(),
         }),
       )
       .output(z.object({ user: FillxUserProfile })),

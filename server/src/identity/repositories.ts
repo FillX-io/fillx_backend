@@ -652,6 +652,7 @@ export async function getProfilesByWallets(
     usernameStatus: UsernameStatus;
     displayName: string | null;
     avatarUrl: string | null;
+    nationality: string | null;
   }>
 > {
   if (walletAddresses.length === 0) return [];
@@ -663,6 +664,7 @@ export async function getProfilesByWallets(
       usernameStatus: fillxUsers.username_status,
       displayName: fillxUsers.display_name,
       avatarUrl: fillxUsers.avatar_url,
+      nationality: fillxUsers.nationality,
     })
     .from(userWallets)
     .innerJoin(fillxUsers, eq(fillxUsers.id, userWallets.user_id))

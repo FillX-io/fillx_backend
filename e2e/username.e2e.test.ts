@@ -310,6 +310,15 @@ test("Privy token does not resolve to an already claimed wallet-backed profile",
     signature: await signEvmMessage(walletChallenge.message),
   });
 
+  const walletNationality = await client.identity.updateDisplayName({
+    nationality: "ca",
+  });
+  assert.equal(walletNationality.user.id, walletUser.user.id);
+  assert.equal(walletNationality.user.nationality, "CA");
+
+  const walletCurrent = await client.identity.getCurrentUser();
+  assert.equal(walletCurrent.user?.nationality, "CA");
+
   const token = await privy.createAccessToken({
     privyUserId: "did:privy:isolated",
   });
@@ -322,12 +331,15 @@ test("Privy token does not resolve to an already claimed wallet-backed profile",
   const privyCurrent = await privyClient.identity.getCurrentUser();
   assert.ok(privyCurrent.user);
   assert.notEqual(privyCurrent.user.id, walletUser.user.id);
+  assert.equal(privyCurrent.user.nationality, null);
 
   const updated = await privyClient.identity.updateDisplayName({
     displayName: "Privy Display",
+    nationality: "us",
   });
   assert.equal(updated.user.id, privyCurrent.user.id);
   assert.equal(updated.user.displayName, "Privy Display");
+  assert.equal(updated.user.nationality, "US");
 
   const profile = await client.profile.getByWallets({
     walletAddresses: [evmWallet.address],
@@ -336,6 +348,7 @@ test("Privy token does not resolve to an already claimed wallet-backed profile",
   assert.equal(profile.profiles[0].userId, walletUser.user.id);
   assert.equal(profile.profiles[0].username, "walletonly");
   assert.equal(profile.profiles[0].displayName, null);
+  assert.equal(profile.profiles[0].nationality, "CA");
   assert.equal(await countFillxUsers(), 2);
 });
 

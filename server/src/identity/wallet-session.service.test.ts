@@ -26,6 +26,7 @@ function makeUser(input: Partial<FillxUser> = {}): FillxUser {
     username_status: input.username_status ?? "claimed",
     display_name: input.display_name ?? null,
     avatar_url: input.avatar_url ?? null,
+    nationality: input.nationality ?? null,
     created_at: input.created_at ?? NOW,
     updated_at: input.updated_at ?? NOW,
   };
@@ -374,6 +375,7 @@ test("resolveCurrentUser returns public profile requiring signature when wallet 
       usernameStatus: "claimed",
       displayName: null,
       avatarUrl: null,
+      nationality: null,
       primaryWallet: {
         chainType: "evm",
         walletAddress: EVM_ADDRESS,
