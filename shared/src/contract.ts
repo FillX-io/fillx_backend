@@ -71,7 +71,10 @@ export const contract = oc.router({
 
   // ─── LLM ───────────────────────────────────────────
   classifyEvent: oc.input(z.object({ title: z.string() })).output(JsonData),
-  classifyBatch: oc.input(z.object({ titles: z.array(z.string()) })).output(JsonData),
+  classifyBatch: oc.input(z.object({
+    titles: z.array(z.string()),
+    variant: z.string().optional(),
+  })).output(JsonData),
   countryIntel: oc.input(z.object({
     country: z.string(),
     context: z.any().optional(),
@@ -79,13 +82,17 @@ export const contract = oc.router({
   groqSummarize: oc.input(z.object({
     headlines: z.array(z.string()).optional(),
     mode: z.string().optional(),
+    geoContext: z.string().optional(),
     variant: z.string().optional(),
+    lang: z.string().optional(),
     language: z.string().optional(),
   })).output(JsonData),
   openrouterSummarize: oc.input(z.object({
     headlines: z.array(z.string()).optional(),
     mode: z.string().optional(),
+    geoContext: z.string().optional(),
     variant: z.string().optional(),
+    lang: z.string().optional(),
     language: z.string().optional(),
   })).output(JsonData),
 
@@ -133,6 +140,10 @@ export const contract = oc.router({
   pizzintGdeltBatch: oc.input(z.object({
     query: z.string().optional(),
     timespan: z.string().optional(),
+    pairs: z.string().optional(),
+    method: z.string().optional(),
+    dateStart: z.string().optional(),
+    dateEnd: z.string().optional(),
   })).output(JsonData),
   techEvents: oc.output(JsonData),
   worldbank: oc.input(z.object({
@@ -140,8 +151,10 @@ export const contract = oc.router({
     countries: z.string().optional(),
   })).output(JsonData),
   worldpopExposure: oc.input(z.object({
+    mode: z.string().optional(),
     lat: z.coerce.number().optional(),
     lon: z.coerce.number().optional(),
+    radius: z.coerce.number().optional(),
     country: z.string().optional(),
   })).output(JsonData),
   militaryHexDb: oc.input(z.object({ hex: z.string().optional() })).output(JsonData),
