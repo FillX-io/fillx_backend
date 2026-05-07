@@ -15,7 +15,51 @@ function makeUser(input: Partial<FillxUser> = {}): FillxUser {
   };
 }
 
-test("getOrCreateCurrentUser returns an existing Privy-linked user", async () => {
+test("getCurrentUser returns a guest response without creating a user for anonymous auth", async () => {
+  let createCount = 0;
+  const service = createIdentityService({
+    users: {
+      findById: async () => undefined,
+      findByUsername: async () => undefined,
+      createGeneratedUser: async () => {
+        createCount += 1;
+        return makeUser();
+      },
+      updateDisplayName: async () => {
+        throw new Error("should not update user");
+      },
+    },
+  });
+
+  const result = await service.getCurrentUser({ auth: { type: "anonymous" } });
+
+  assert.deepEqual(result, { user: null, guest: { isGuest: true } });
+  assert.equal(createCount, 0);
+});
+
+test("getCurrentUser returns an existing FillX session user", async () => {
+  const existing = makeUser({ id: "user-session", username: "alice" });
+  const service = createIdentityService({
+    users: {
+      findById: async (id) => (id === existing.id ? existing : undefined),
+      findByUsername: async () => undefined,
+      createGeneratedUser: async () => {
+        throw new Error("should not create user");
+      },
+      updateDisplayName: async () => {
+        throw new Error("should not update user");
+      },
+    },
+  });
+
+  const result = await service.getCurrentUser({
+    auth: { type: "fillx", userId: "user-session" },
+  });
+
+  assert.deepEqual(result, { user: existing, guest: null });
+});
+
+test("getCurrentUser returns an existing Privy-linked user", async () => {
   const existing = makeUser({ id: "user-existing", username: "alice" });
   const service = createIdentityService({
     users: {
@@ -29,23 +73,21 @@ test("getOrCreateCurrentUser returns an existing Privy-linked user", async () =>
       },
     },
     authIdentities: {
-      findByProviderUserId: async () => ({
-        user_id: existing.id,
-      }),
+      findByProviderUserId: async () => ({ user_id: existing.id }),
       linkPrivyIdentity: async () => {
         throw new Error("should not link identity");
       },
     },
   });
 
-  const user = await service.getOrCreateCurrentUser({
-    privyUserId: "privy-user-1",
+  const result = await service.getCurrentUser({
+    auth: { type: "privy", privyUserId: "privy-user-1" },
   });
 
-  assert.equal(user.id, existing.id);
+  assert.deepEqual(result, { user: existing, guest: null });
 });
 
-test("getOrCreateCurrentUser creates a generated user and links Privy identity", async () => {
+test("getCurrentUser creates a generated user only for verified Privy auth", async () => {
   const linked: Array<{ userId: string; privyUserId: string }> = [];
   const created = makeUser({ id: "user-created", username: "trader_002a" });
   const service = createIdentityService(
@@ -72,11 +114,12 @@ test("getOrCreateCurrentUser creates a generated user and links Privy identity",
     { randomInt: () => 42 },
   );
 
-  const user = await service.getOrCreateCurrentUser({
-    privyUserId: "privy-user-2",
+  const result = await service.getCurrentUser({
+    auth: { type: "privy", privyUserId: "privy-user-2" },
   });
 
-  assert.equal(user.username, "trader_002a");
+  assert.equal(result.user?.username, "trader_002a");
+  assert.equal(result.guest, null);
   assert.deepEqual(linked, [
     { userId: "user-created", privyUserId: "privy-user-2" },
   ]);

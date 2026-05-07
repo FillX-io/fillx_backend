@@ -23,23 +23,27 @@ export type IdentityRepos = {
       privyUserId: string;
     }) => Promise<unknown>;
   };
-  wallets?: {
-    findByWallet: (input: {
-      chainType: "evm" | "solana";
-      walletAddress: string;
-    }) => Promise<{ user_id: string } | undefined>;
-  };
 };
 
-export type CurrentUserInput = {
-  privyUserId?: string;
-  wallet?: { chainType: "evm" | "solana"; walletAddress: string };
+export type CurrentUserAuth =
+  | { type: "anonymous" }
+  | { type: "fillx"; userId: string }
+  | { type: "privy"; privyUserId: string };
+
+export type CurrentUserResult = {
+  user: FillxUser | null;
+  guest: { isGuest: true } | null;
 };
 
 export function createIdentityService(
   repos: IdentityRepos,
   options: { randomInt?: () => number } = {},
 ) {
+  const guestResponse: CurrentUserResult = {
+    user: null,
+    guest: { isGuest: true },
+  };
+
   async function createGeneratedUser(): Promise<FillxUser> {
     if (!repos.users.createGeneratedUser || !repos.users.findByUsername) {
       throw new Error("IDENTITY_REPO_INCOMPLETE");
@@ -55,38 +59,37 @@ export function createIdentityService(
   }
 
   return {
-    async getOrCreateCurrentUser(input: CurrentUserInput): Promise<FillxUser> {
-      if (
-        input.privyUserId &&
-        repos.authIdentities?.findByProviderUserId &&
-        repos.users.findById
-      ) {
-        const identity = await repos.authIdentities.findByProviderUserId({
-          provider: "privy",
-          providerUserId: input.privyUserId,
-        });
-        if (identity) {
-          const existing = await repos.users.findById(identity.user_id);
-          if (existing) return existing;
-        }
+    async getCurrentUser(input: {
+      auth: CurrentUserAuth;
+    }): Promise<CurrentUserResult> {
+      if (input.auth.type === "anonymous") {
+        return guestResponse;
       }
 
-      if (input.wallet && repos.wallets?.findByWallet && repos.users.findById) {
-        const wallet = await repos.wallets.findByWallet(input.wallet);
-        if (wallet) {
-          const existing = await repos.users.findById(wallet.user_id);
-          if (existing) return existing;
-        }
+      if (input.auth.type === "fillx") {
+        const existing = await repos.users.findById?.(input.auth.userId);
+        return existing ? { user: existing, guest: null } : guestResponse;
+      }
+
+      if (!repos.authIdentities || !repos.users.findById) {
+        throw new Error("IDENTITY_REPO_INCOMPLETE");
+      }
+
+      const identity = await repos.authIdentities.findByProviderUserId({
+        provider: "privy",
+        providerUserId: input.auth.privyUserId,
+      });
+      if (identity) {
+        const existing = await repos.users.findById(identity.user_id);
+        if (existing) return { user: existing, guest: null };
       }
 
       const created = await createGeneratedUser();
-      if (input.privyUserId && repos.authIdentities?.linkPrivyIdentity) {
-        await repos.authIdentities.linkPrivyIdentity({
-          userId: created.id,
-          privyUserId: input.privyUserId,
-        });
-      }
-      return created;
+      await repos.authIdentities.linkPrivyIdentity({
+        userId: created.id,
+        privyUserId: input.auth.privyUserId,
+      });
+      return { user: created, guest: null };
     },
 
     async updateDisplayName(input: {
