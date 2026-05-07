@@ -35,7 +35,9 @@ export async function verifyFillxSessionToken(input: {
   secret: string;
 }): Promise<VerifiedFillxSession | null> {
   try {
-    const verified = await jwtVerify(input.token, secretKey(input.secret));
+    const verified = await jwtVerify(input.token, secretKey(input.secret), {
+      algorithms: ["HS256"],
+    });
     if (verified.payload.typ !== SESSION_TYPE) return null;
     if (!verified.payload.sub) return null;
     return { userId: verified.payload.sub };

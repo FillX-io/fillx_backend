@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SignJWT } from "jose";
 import {
   FILLX_SESSION_COOKIE,
   setFillxSessionCookie,
@@ -7,11 +8,15 @@ import {
   verifyFillxSessionToken,
 } from "./session.js";
 
+const TEST_NOW = new Date("2026-05-07T00:00:00.000Z");
+const VERY_LONG_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 100;
+
 test("signFillxSession creates a JWT that verifies to the FillX user id", async () => {
   const token = await signFillxSession({
     userId: "user-123",
     secret: "test-secret",
-    now: new Date("2026-05-07T00:00:00.000Z"),
+    now: TEST_NOW,
+    maxAgeSeconds: VERY_LONG_MAX_AGE_SECONDS,
   });
 
   const verified = await verifyFillxSessionToken({
@@ -20,6 +25,25 @@ test("signFillxSession creates a JWT that verifies to the FillX user id", async 
   });
 
   assert.deepEqual(verified, { userId: "user-123" });
+});
+
+test("verifyFillxSessionToken rejects tokens signed with a different algorithm", async () => {
+  const token = await new SignJWT({ typ: "fillx-session" })
+    .setProtectedHeader({ alg: "HS384" })
+    .setSubject("user-123")
+    .setIssuedAt(Math.floor(TEST_NOW.getTime() / 1000))
+    .setExpirationTime(
+      Math.floor(TEST_NOW.getTime() / 1000) + VERY_LONG_MAX_AGE_SECONDS,
+    )
+    .sign(new TextEncoder().encode("test-secret"));
+
+  assert.equal(
+    await verifyFillxSessionToken({
+      token,
+      secret: "test-secret",
+    }),
+    null,
+  );
 });
 
 test("verifyFillxSessionToken returns null for invalid tokens", async () => {
