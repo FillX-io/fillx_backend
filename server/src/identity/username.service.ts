@@ -88,6 +88,67 @@ export function createUsernameService(
     return `0x${createHash("sha256").update(message).digest("hex")}`;
   }
 
+  function isDatabaseReturningEmpty(error: unknown): boolean {
+    return error instanceof Error && error.message === "DATABASE_RETURNING_EMPTY";
+  }
+
+  function isPgUniqueViolation(
+    error: unknown,
+    constraintNames: string[],
+  ): boolean {
+    if (!error || typeof error !== "object") return false;
+    const maybePgError = error as { code?: unknown; constraint?: unknown };
+    return (
+      maybePgError.code === "23505" &&
+      typeof maybePgError.constraint === "string" &&
+      constraintNames.includes(maybePgError.constraint)
+    );
+  }
+
+  function usernameConflictError(error: unknown): never {
+    if (
+      isDatabaseReturningEmpty(error) ||
+      isPgUniqueViolation(error, ["fillx_users_username_unique"])
+    ) {
+      throw apiError(
+        "USERNAME_TAKEN",
+        "USERNAME_TAKEN: That username was just claimed. Please choose another one.",
+      );
+    }
+    throw error;
+  }
+
+  function walletConflictError(error: unknown): never {
+    if (
+      isDatabaseReturningEmpty(error) ||
+      isPgUniqueViolation(error, [
+        "user_wallets_chain_wallet_unique",
+        "user_wallets_one_primary_per_user",
+      ])
+    ) {
+      throw apiError(
+        "PRIMARY_WALLET_ALREADY_SET",
+        "PRIMARY_WALLET_ALREADY_SET: This profile is already controlled by another wallet.",
+      );
+    }
+    throw error;
+  }
+
+  async function createPrimaryWalletOrConflict(
+    serviceRepos: UsernameServiceRepos,
+    input: {
+      userId: string;
+      chainType: ChainType;
+      walletAddress: string;
+    },
+  ): Promise<UserWallet> {
+    try {
+      return await serviceRepos.wallets.createPrimaryWallet(input);
+    } catch (error) {
+      walletConflictError(error);
+    }
+  }
+
   async function ensureAvailable(username: string): Promise<void> {
     const existing = await repos.users.findByUsername(username);
     if (existing) {
@@ -256,20 +317,31 @@ export function createUsernameService(
             throw apiError("PRIMARY_WALLET_ALREADY_SET");
           }
           if (!primaryWallet) {
-            await txRepos.wallets.createPrimaryWallet({
+            await createPrimaryWalletOrConflict(txRepos, {
               userId: user.id,
               chainType: challenge.chain_type,
               walletAddress: challenge.wallet_address,
             });
           }
 
-          updated = await txRepos.users.markUsernameClaimed({
-            userId: user.id,
-            username: challenge.username,
-          });
+          try {
+            updated = await txRepos.users.markUsernameClaimed({
+              userId: user.id,
+              username: challenge.username,
+            });
+          } catch (error) {
+            if (isDatabaseReturningEmpty(error)) {
+              throw apiError("USERNAME_ALREADY_CLAIMED");
+            }
+            usernameConflictError(error);
+          }
         } else {
-          updated = await txRepos.users.createClaimedUser(challenge.username);
-          await txRepos.wallets.createPrimaryWallet({
+          try {
+            updated = await txRepos.users.createClaimedUser(challenge.username);
+          } catch (error) {
+            usernameConflictError(error);
+          }
+          await createPrimaryWalletOrConflict(txRepos, {
             userId: updated.id,
             chainType: challenge.chain_type,
             walletAddress: challenge.wallet_address,

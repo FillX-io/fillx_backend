@@ -65,6 +65,7 @@ export function createUsersRepo(db: DbLike) {
         await db
           .insert(fillxUsers)
           .values({ username, username_status: "claimed" as UsernameStatus })
+          .onConflictDoNothing({ target: fillxUsers.username })
           .returning(),
       );
     },
@@ -155,6 +156,9 @@ export function createWalletsRepo(db: DbLike) {
             wallet_address: input.walletAddress,
             is_primary: true,
             verified_at: new Date(),
+          })
+          .onConflictDoNothing({
+            target: [userWallets.chain_type, userWallets.wallet_address],
           })
           .returning(),
       );

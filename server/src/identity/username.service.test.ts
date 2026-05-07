@@ -360,3 +360,58 @@ test("claimUsername consumes the challenge atomically in the claim transaction",
   assert.equal(users.size, 1);
   assert.equal(wallets.length, 1);
 });
+
+test("claimUsername translates createClaimedUser contention to USERNAME_TAKEN", async () => {
+  const { repos } = makeRepos();
+  repos.users.createClaimedUser = async () => {
+    throw new Error("DATABASE_RETURNING_EMPTY");
+  };
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => true,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  await assert.rejects(
+    service.claimUsername({
+      challengeId: challenge.challengeId,
+      signature: "0xsigned",
+    }),
+    /USERNAME_TAKEN/,
+  );
+});
+
+test("claimUsername translates createPrimaryWallet contention and skips audit", async () => {
+  const { repos, audits } = makeRepos();
+  repos.wallets.createPrimaryWallet = async () => {
+    throw new Error("DATABASE_RETURNING_EMPTY");
+  };
+  const service = createUsernameService(repos, {
+    now: () => new Date("2026-05-07T00:00:00.000Z"),
+    nonce: () => "nonce-1",
+    verifySignature: async () => true,
+  });
+  const challenge = await service.requestClaimChallenge({
+    authenticatedUserId: null,
+    username: "alice_1",
+    walletAddress: "0x0000000000000000000000000000000000000001",
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  await assert.rejects(
+    service.claimUsername({
+      challengeId: challenge.challengeId,
+      signature: "0xsigned",
+    }),
+    /PRIMARY_WALLET_ALREADY_SET/,
+  );
+  assert.equal(audits.length, 0);
+});
