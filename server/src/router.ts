@@ -142,6 +142,7 @@ async function authenticatedUserIdFromContext(
   if (context.auth.type === "fillx") return context.auth.session.userId;
 
   if (context.auth.type === "privy") {
+    requireFillxSessionSecret(context);
     const repos = createIdentityRepos(context.db);
     const service = createIdentityService({
       users: repos.users,
@@ -305,6 +306,9 @@ export const router = pub.router({
   identity: {
     getCurrentUser: pub.identity.getCurrentUser.handler(
       async ({ context }) => {
+        if (context.auth.type === "privy") {
+          requireFillxSessionSecret(context);
+        }
         const repos = createIdentityRepos(context.db);
         const service = createIdentityService({
           users: repos.users,
@@ -325,6 +329,9 @@ export const router = pub.router({
 
     updateDisplayName: pub.identity.updateDisplayName.handler(
       async ({ input, context }) => {
+        if (context.auth.type === "privy") {
+          requireFillxSessionSecret(context);
+        }
         const repos = createIdentityRepos(context.db);
         const service = createIdentityService({
           users: repos.users,
@@ -412,6 +419,7 @@ export const router = pub.router({
   orderly: {
     linkAccount: pub.orderly.linkAccount.handler(async ({ input, context }) => {
       const privy = requirePrivy(context);
+      requireFillxSessionSecret(context);
       const repos = createIdentityRepos(context.db);
       const identity = createIdentityService({
         users: repos.users,
