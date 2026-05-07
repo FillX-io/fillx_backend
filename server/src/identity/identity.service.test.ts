@@ -263,6 +263,21 @@ test("updateProfile rejects invalid nationality before writing", async () => {
   assert.deepEqual(updates, []);
 });
 
+test("updateProfile rejects non-ASCII nationality before writing", async () => {
+  const { service, updates } = makeProfileUpdateService();
+
+  await assert.rejects(
+    service.updateProfile({ userId: "user-1", nationality: "ß" }),
+    /INVALID_NATIONALITY/,
+  );
+  await assert.rejects(
+    service.updateProfile({ userId: "user-1", nationality: "ﬀ" }),
+    /INVALID_NATIONALITY/,
+  );
+
+  assert.deepEqual(updates, []);
+});
+
 test("updateProfile preserves omitted fields and trims display name", async () => {
   const { service } = makeProfileUpdateService(
     makeUser({ display_name: "Existing", nationality: "BR" }),

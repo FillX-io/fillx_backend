@@ -74,12 +74,11 @@ function normalizeNationality(input: string | null): string | null {
   const trimmed = input.trim();
   if (trimmed.length === 0) return null;
 
-  const nationality = trimmed.toUpperCase();
-  if (!/^[A-Z]{2}$/.test(nationality)) {
+  if (!/^[A-Za-z]{2}$/.test(trimmed)) {
     throw new Error("INVALID_NATIONALITY");
   }
 
-  return nationality;
+  return trimmed.toUpperCase();
 }
 
 export function createIdentityService(
