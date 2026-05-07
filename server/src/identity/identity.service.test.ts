@@ -5,13 +5,15 @@ import { createIdentityService, type FillxUser } from "./identity.service.js";
 function makeUser(input: Partial<FillxUser> = {}): FillxUser {
   const now = new Date("2026-05-07T00:00:00.000Z");
   return {
-    id: input.id ?? "user-1",
-    username: input.username ?? "trader_0001",
-    username_status: input.username_status ?? "generated",
-    display_name: input.display_name ?? null,
-    avatar_url: input.avatar_url ?? null,
-    created_at: input.created_at ?? now,
-    updated_at: input.updated_at ?? now,
+    id: input.id === undefined ? "user-1" : input.id,
+    username: input.username === undefined ? "trader_0001" : input.username,
+    username_status:
+      input.username_status === undefined ? "generated" : input.username_status,
+    display_name: input.display_name === undefined ? null : input.display_name,
+    avatar_url: input.avatar_url === undefined ? null : input.avatar_url,
+    nationality: input.nationality === undefined ? null : input.nationality,
+    created_at: input.created_at === undefined ? now : input.created_at,
+    updated_at: input.updated_at === undefined ? now : input.updated_at,
   };
 }
 

@@ -1,0 +1,2 @@
+ALTER TABLE "fillx_users" ADD COLUMN "nationality" text;--> statement-breakpoint
+ALTER TABLE "fillx_users" ADD CONSTRAINT "fillx_users_nationality_check" CHECK ("fillx_users"."nationality" is null or "fillx_users"."nationality" ~ '^[A-Z]{2}$');

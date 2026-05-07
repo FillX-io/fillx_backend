@@ -52,6 +52,7 @@ export const fillxUsers = pgTable(
       .notNull(),
     display_name: text("display_name"),
     avatar_url: text("avatar_url"),
+    nationality: text("nationality"),
     created_at: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -75,6 +76,10 @@ export const fillxUsers = pgTable(
     displayNameCheck: check(
       "fillx_users_display_name_check",
       sql`${table.display_name} is null or char_length(${table.display_name}) <= 50`,
+    ),
+    nationalityCheck: check(
+      "fillx_users_nationality_check",
+      sql`${table.nationality} is null or ${table.nationality} ~ '^[A-Z]{2}$'`,
     ),
   }),
 );
