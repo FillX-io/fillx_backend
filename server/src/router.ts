@@ -58,8 +58,62 @@ import { fetchWingbitsBatch } from "./services/wingbits-batch.js";
 import { fetchEiaPetroleum } from "./services/eia.js";
 import { fetchFwdStartRss } from "./services/fwdstart.js";
 import { trackIpConnection } from "./services/track-ip-connection.js";
+import type { AppContext } from "./identity/context.js";
+import { apiError } from "./identity/errors.js";
+import { createIdentityService } from "./identity/identity.service.js";
+import { identityRateLimiter } from "./identity/rate-limit.js";
+import {
+  createIdentityRepos,
+  getProfilesByWallets,
+} from "./identity/repositories.js";
+import {
+  createUsernameService,
+  type UsernameServiceRepos,
+} from "./identity/username.service.js";
+import { normalizeWalletAddress } from "./identity/wallet.js";
 
-const pub = implement(contract);
+const pub = implement(contract).$context<AppContext>();
+
+function serializeUser(user: {
+  id: string;
+  username: string;
+  username_status: "generated" | "claimed";
+  display_name: string | null;
+  avatar_url: string | null;
+}) {
+  return {
+    id: user.id,
+    username: user.username,
+    usernameStatus: user.username_status,
+    displayName: user.display_name,
+    avatarUrl: user.avatar_url,
+    hasClaimedUsername: user.username_status === "claimed",
+  };
+}
+
+function requirePrivy(context: AppContext) {
+  if (context.auth.type !== "privy") {
+    throw apiError("AUTH_REQUIRED");
+  }
+  return context.auth.privy;
+}
+
+function createUsernameServiceForContext(context: AppContext) {
+  const makeRepos = (db: AppContext["db"]): UsernameServiceRepos => {
+    const repos = createIdentityRepos(db);
+    return {
+      users: repos.users,
+      wallets: repos.wallets,
+      usernameClaims: repos.usernameClaims,
+      runTransaction: <T>(fn: (repos: UsernameServiceRepos) => Promise<T>) =>
+        context.db.transaction(async (tx) =>
+          fn(makeRepos(tx as unknown as AppContext["db"])),
+        ),
+    };
+  };
+
+  return createUsernameService(makeRepos(context.db));
+}
 
 export const router = pub.router({
   health: pub.health.handler(async () => ({ status: "ok" as const })),
@@ -166,6 +220,137 @@ export const router = pub.router({
 
   // ─── FwdStart ──────────────────────────────────────
   fwdstart: pub.fwdstart.handler(async () => await fetchFwdStartRss()),
+
+  // ─── Identity ──────────────────────────────────────
+  identity: {
+    getCurrentUser: pub.identity.getCurrentUser.handler(
+      async ({ input, context }) => {
+        const repos = createIdentityRepos(context.db);
+        const service = createIdentityService({
+          users: repos.users,
+          authIdentities: repos.authIdentities,
+          wallets: repos.wallets,
+        });
+        const wallet =
+          input?.walletAddress && input.chainType
+            ? {
+                walletAddress: normalizeWalletAddress(
+                  input.chainType,
+                  input.walletAddress,
+                ),
+                chainType: input.chainType,
+              }
+            : undefined;
+        const currentUser = await service.getOrCreateCurrentUser({
+          privyUserId:
+            context.auth.type === "privy"
+              ? context.auth.privy.privyUserId
+              : undefined,
+          wallet,
+        });
+        return { user: serializeUser(currentUser) };
+      },
+    ),
+
+    updateDisplayName: pub.identity.updateDisplayName.handler(
+      async ({ input, context }) => {
+        const privy = requirePrivy(context);
+        const repos = createIdentityRepos(context.db);
+        const service = createIdentityService({
+          users: repos.users,
+          authIdentities: repos.authIdentities,
+          wallets: repos.wallets,
+        });
+        const currentUser = await service.getOrCreateCurrentUser({
+          privyUserId: privy.privyUserId,
+        });
+        const updated = await service.updateDisplayName({
+          userId: currentUser.id,
+          displayName: input.displayName,
+        });
+        return { user: serializeUser(updated) };
+      },
+    ),
+  },
+
+  username: {
+    checkAvailable: pub.username.checkAvailable.handler(
+      async ({ input, context }) => {
+        const limit = identityRateLimiter.check({
+          key: `${context.ipAddress}:checkUsernameAvailable`,
+          limit: 60,
+          windowMs: 60 * 60 * 1000,
+        });
+        if (!limit.allowed) throw apiError("RATE_LIMITED");
+        return createUsernameServiceForContext(context).checkAvailable(
+          input.username,
+        );
+      },
+    ),
+
+    requestClaimChallenge: pub.username.requestClaimChallenge.handler(
+      async ({ input, context }) => {
+        const limit = identityRateLimiter.check({
+          key: `${input.userId}:requestUsernameClaim`,
+          limit: 10,
+          windowMs: 60 * 60 * 1000,
+        });
+        if (!limit.allowed) throw apiError("RATE_LIMITED");
+        return createUsernameServiceForContext(context).requestClaimChallenge({
+          ...input,
+          chainId: input.chainId ?? null,
+        });
+      },
+    ),
+
+    claim: pub.username.claim.handler(async ({ input, context }) => {
+      const limit = identityRateLimiter.check({
+        key: `${input.userId}:claimUsername`,
+        limit: 10,
+        windowMs: 60 * 60 * 1000,
+      });
+      if (!limit.allowed) throw apiError("RATE_LIMITED");
+      const updated = await createUsernameServiceForContext(
+        context,
+      ).claimUsername(input);
+      return { user: serializeUser(updated) };
+    }),
+  },
+
+  profile: {
+    getByWallets: pub.profile.getByWallets.handler(
+      async ({ input, context }) => {
+        return {
+          profiles: await getProfilesByWallets(
+            context.db,
+            input.walletAddresses.map((address) => address.toLowerCase()),
+          ),
+        };
+      },
+    ),
+  },
+
+  orderly: {
+    linkAccount: pub.orderly.linkAccount.handler(async ({ input, context }) => {
+      const privy = requirePrivy(context);
+      const repos = createIdentityRepos(context.db);
+      const identity = createIdentityService({
+        users: repos.users,
+        authIdentities: repos.authIdentities,
+        wallets: repos.wallets,
+      });
+      const currentUser = await identity.getOrCreateCurrentUser({
+        privyUserId: privy.privyUserId,
+      });
+      await repos.orderlyAccounts.upsertOrderlyAccount({
+        userId: currentUser.id,
+        orderlyAccountId: input.orderlyAccountId,
+        orderlyAddress: normalizeWalletAddress("evm", input.orderlyAddress),
+        brokerId: input.brokerId ?? null,
+      });
+      return { ok: true as const };
+    }),
+  },
 
   // ─── Anti-Fraud ────────────────────────────────────
   trackIpConnection: pub.trackIpConnection.handler(

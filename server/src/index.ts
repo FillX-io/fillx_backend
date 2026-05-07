@@ -5,6 +5,7 @@ import { CORSPlugin } from "@orpc/server/plugins";
 import { onError } from "@orpc/server";
 import { router } from "./router.js";
 import { handleRestApi } from "./rest-adapter.js";
+import { createContext } from "./identity/context.js";
 
 const port = Number(process.env.PORT ?? 8000);
 
@@ -33,7 +34,7 @@ const server = createServer(async (req, res) => {
   // oRPC
   const { matched } = await handler.handle(req, res, {
     prefix: "/rpc",
-    context: {},
+    context: await createContext(req),
   });
 
   if (!matched) {

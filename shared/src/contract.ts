@@ -3,6 +3,24 @@ import { z } from "zod";
 
 // Generic passthrough schema for endpoints that return dynamic data
 const JsonData = z.any();
+const ChainType = z.enum(["evm", "solana"]);
+const UsernameStatus = z.enum(["generated", "claimed"]);
+const FillxUserProfile = z.object({
+  id: z.string(),
+  username: z.string(),
+  usernameStatus: UsernameStatus,
+  displayName: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  hasClaimedUsername: z.boolean(),
+});
+const PublicWalletProfile = z.object({
+  walletAddress: z.string(),
+  userId: z.string(),
+  username: z.string(),
+  usernameStatus: UsernameStatus,
+  displayName: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+});
 
 export const contract = oc.router({
   // ─── Health ────────────────────────────────────────
@@ -186,6 +204,76 @@ export const contract = oc.router({
 
   // ─── FwdStart ──────────────────────────────────────
   fwdstart: oc.output(JsonData),
+
+  // ─── Identity ──────────────────────────────────────
+  identity: oc.router({
+    getCurrentUser: oc
+      .input(
+        z
+          .object({
+            walletAddress: z.string().optional(),
+            chainType: ChainType.optional(),
+          })
+          .optional(),
+      )
+      .output(z.object({ user: FillxUserProfile })),
+    updateDisplayName: oc
+      .input(z.object({ displayName: z.string().max(50) }))
+      .output(z.object({ user: FillxUserProfile })),
+  }),
+  username: oc.router({
+    checkAvailable: oc
+      .input(z.object({ username: z.string() }))
+      .output(
+        z.object({
+          available: z.boolean(),
+          normalizedUsername: z.string(),
+          error: z.string().optional(),
+        }),
+      ),
+    requestClaimChallenge: oc
+      .input(
+        z.object({
+          userId: z.string(),
+          username: z.string(),
+          walletAddress: z.string(),
+          chainType: ChainType,
+          chainId: z.number().int().positive().nullable().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          challengeId: z.string(),
+          expiresAt: z.string(),
+          message: z.string(),
+        }),
+      ),
+    claim: oc
+      .input(
+        z.object({
+          userId: z.string(),
+          challengeId: z.string(),
+          signature: z.string(),
+        }),
+      )
+      .output(z.object({ user: FillxUserProfile })),
+  }),
+  profile: oc.router({
+    getByWallets: oc
+      .input(z.object({ walletAddresses: z.array(z.string()).max(500) }))
+      .output(z.object({ profiles: z.array(PublicWalletProfile) })),
+  }),
+  orderly: oc.router({
+    linkAccount: oc
+      .input(
+        z.object({
+          orderlyAccountId: z.string(),
+          orderlyAddress: z.string(),
+          brokerId: z.string().nullable().optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+  }),
 
   // ─── Anti-Fraud ────────────────────────────────────
   trackIpConnection: oc

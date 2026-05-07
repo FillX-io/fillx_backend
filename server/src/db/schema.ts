@@ -1,4 +1,22 @@
-import { bigserial, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  bigserial,
+  boolean,
+  check,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+export type UsernameStatus = "generated" | "claimed";
+export type ChainType = "evm" | "solana";
+export type ClaimStatus = "accepted" | "rejected" | "expired";
+export type AuthProvider = "privy";
 
 export const ipConnectionLog = pgTable(
   "ip_connection_log",
@@ -23,3 +41,196 @@ export const ipConnectionLog = pgTable(
 
 export type IpConnectionLog = typeof ipConnectionLog.$inferSelect;
 export type NewIpConnectionLog = typeof ipConnectionLog.$inferInsert;
+
+export const fillxUsers = pgTable(
+  "fillx_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    username: text("username").notNull(),
+    username_status: text("username_status")
+      .$type<UsernameStatus>()
+      .notNull(),
+    display_name: text("display_name"),
+    avatar_url: text("avatar_url"),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    usernameUnique: unique("fillx_users_username_unique").on(table.username),
+    usernameStatusIdx: index("fillx_users_username_status_idx").on(
+      table.username_status,
+    ),
+    usernameLowercaseCheck: check(
+      "fillx_users_username_lowercase",
+      sql`${table.username} = lower(${table.username})`,
+    ),
+    usernameStatusCheck: check(
+      "fillx_users_username_status_check",
+      sql`${table.username_status} in ('generated', 'claimed')`,
+    ),
+    displayNameCheck: check(
+      "fillx_users_display_name_check",
+      sql`${table.display_name} is null or char_length(${table.display_name}) <= 50`,
+    ),
+  }),
+);
+
+export const userWallets = pgTable(
+  "user_wallets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    chain_type: text("chain_type").$type<ChainType>().notNull(),
+    wallet_address: text("wallet_address").notNull(),
+    is_primary: boolean("is_primary").notNull().default(false),
+    verified_at: timestamp("verified_at", { withTimezone: true }).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    chainWalletUnique: unique("user_wallets_chain_wallet_unique").on(
+      table.chain_type,
+      table.wallet_address,
+    ),
+    onePrimaryPerUser: uniqueIndex("user_wallets_one_primary_per_user")
+      .on(table.user_id)
+      .where(sql`${table.is_primary} = true`),
+    chainTypeCheck: check(
+      "user_wallets_chain_type_check",
+      sql`${table.chain_type} in ('evm', 'solana')`,
+    ),
+  }),
+);
+
+export const userAuthIdentities = pgTable(
+  "user_auth_identities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<AuthProvider>().notNull(),
+    provider_user_id: text("provider_user_id").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    providerUserUnique: unique(
+      "user_auth_identities_provider_user_unique",
+    ).on(table.provider, table.provider_user_id),
+    providerCheck: check(
+      "user_auth_identities_provider_check",
+      sql`${table.provider} in ('privy')`,
+    ),
+  }),
+);
+
+export const userOrderlyAccounts = pgTable(
+  "user_orderly_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    orderly_account_id: text("orderly_account_id").notNull(),
+    orderly_address: text("orderly_address").notNull(),
+    broker_id: text("broker_id"),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    accountUnique: unique("user_orderly_accounts_account_unique").on(
+      table.orderly_account_id,
+    ),
+    orderlyAddressIdx: index("user_orderly_accounts_orderly_address_idx").on(
+      table.orderly_address,
+    ),
+    userIdIdx: index("user_orderly_accounts_user_id_idx").on(table.user_id),
+  }),
+);
+
+export const usernameClaimChallenges = pgTable(
+  "username_claim_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    username: text("username").notNull(),
+    wallet_address: text("wallet_address").notNull(),
+    chain_type: text("chain_type").$type<ChainType>().notNull(),
+    chain_id: integer("chain_id"),
+    nonce: text("nonce").notNull(),
+    message: text("message").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumed_at: timestamp("consumed_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    nonceUnique: unique("username_claim_challenges_nonce_unique").on(
+      table.nonce,
+    ),
+    userCreatedIdx: index("username_claim_challenges_user_created_idx").on(
+      table.user_id,
+      table.created_at.desc(),
+    ),
+    chainTypeCheck: check(
+      "username_claim_challenges_chain_type_check",
+      sql`${table.chain_type} in ('evm', 'solana')`,
+    ),
+  }),
+);
+
+export const usernameClaims = pgTable(
+  "username_claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    username: text("username").notNull(),
+    wallet_address: text("wallet_address").notNull(),
+    chain_type: text("chain_type").$type<ChainType>().notNull(),
+    signature: text("signature").notNull(),
+    message_hash: text("message_hash").notNull(),
+    status: text("status").$type<ClaimStatus>().notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    userCreatedIdx: index("username_claims_user_created_idx").on(
+      table.user_id,
+      table.created_at.desc(),
+    ),
+    usernameIdx: index("username_claims_username_idx").on(table.username),
+    chainTypeCheck: check(
+      "username_claims_chain_type_check",
+      sql`${table.chain_type} in ('evm', 'solana')`,
+    ),
+    statusCheck: check(
+      "username_claims_status_check",
+      sql`${table.status} in ('accepted', 'rejected', 'expired')`,
+    ),
+  }),
+);
+
+export type FillxUser = typeof fillxUsers.$inferSelect;
+export type NewFillxUser = typeof fillxUsers.$inferInsert;
+export type UserWallet = typeof userWallets.$inferSelect;
+export type UserAuthIdentity = typeof userAuthIdentities.$inferSelect;
+export type UserOrderlyAccount = typeof userOrderlyAccounts.$inferSelect;
+export type UsernameClaimChallenge =
+  typeof usernameClaimChallenges.$inferSelect;
+export type UsernameClaim = typeof usernameClaims.$inferSelect;
