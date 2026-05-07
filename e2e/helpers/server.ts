@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createAppServer } from "../../server/src/app.js";
 import { closeDb, resetDbForTests } from "../../server/src/db/client.js";
+import { resetIdentityRateLimiterForTests } from "../../server/src/identity/rate-limit.js";
 
 export type TestServer = {
   server: Server;
@@ -11,6 +12,7 @@ export type TestServer = {
 
 export async function startTestServer(): Promise<TestServer> {
   resetDbForTests();
+  resetIdentityRateLimiterForTests();
   const server = createAppServer();
   await new Promise<void>((resolve, reject) => {
     const cleanup = () => {

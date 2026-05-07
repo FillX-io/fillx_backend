@@ -25,7 +25,15 @@ export function createMemoryRateLimiter(options: { now?: () => number } = {}) {
         resetAt: bucket.resetAt,
       };
     },
+
+    reset(): void {
+      buckets.clear();
+    },
   };
 }
 
 export const identityRateLimiter = createMemoryRateLimiter();
+
+export function resetIdentityRateLimiterForTests(): void {
+  identityRateLimiter.reset();
+}

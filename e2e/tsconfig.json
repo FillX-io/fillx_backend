@@ -4,6 +4,6 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["helpers/**/*.ts"],
+  "include": ["helpers/**/*.ts", "*.test.ts"],
   "references": [{ "path": "../shared" }]
 }
