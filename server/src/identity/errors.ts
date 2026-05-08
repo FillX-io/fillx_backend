@@ -1,3 +1,5 @@
+import { ORPCError } from "@orpc/server";
+
 export type ApiErrorCode =
   | "AUTH_REQUIRED"
   | "SESSION_NOT_CONFIGURED"
@@ -25,12 +27,60 @@ export type ApiErrorCode =
   | "AVATAR_PROCESSING_FAILED"
   | "AVATAR_UPLOAD_FAILED";
 
-export class IdentityApiError extends Error {
+function statusForApiError(code: ApiErrorCode): number {
+  switch (code) {
+    case "AUTH_REQUIRED":
+    case "SESSION_NOT_CONFIGURED":
+    case "USER_NOT_AUTHENTICATED":
+      return 401;
+    case "USER_NOT_FOUND":
+    case "WALLET_PROFILE_NOT_FOUND":
+    case "CHALLENGE_NOT_FOUND":
+    case "AVATAR_UPLOAD_NOT_FOUND":
+    case "AVATAR_UPLOAD_MISSING_OBJECT":
+      return 404;
+    case "RATE_LIMITED":
+      return 429;
+    case "USERNAME_TAKEN":
+    case "USERNAME_ALREADY_CLAIMED":
+    case "PRIMARY_WALLET_ALREADY_SET":
+    case "CHALLENGE_ALREADY_USED":
+    case "AVATAR_UPLOAD_ALREADY_FINALIZED":
+      return 409;
+    case "AVATAR_INVALID_CONTENT_LENGTH":
+      return 413;
+    case "AVATAR_INVALID_CONTENT_TYPE":
+      return 415;
+    case "INVALID_USERNAME":
+    case "USERNAME_RESERVED":
+      return 422;
+    case "CHALLENGE_EXPIRED":
+    case "SIGNATURE_INVALID":
+    case "AVATAR_UPLOAD_EXPIRED":
+    case "AVATAR_UPLOAD_OBJECT_MISMATCH":
+      return 400;
+    case "AVATAR_STORAGE_NOT_CONFIGURED":
+    case "AVATAR_PROCESSING_FAILED":
+    case "AVATAR_UPLOAD_FAILED":
+      return 500;
+  }
+}
+
+export class IdentityApiError extends ORPCError<ApiErrorCode, undefined> {
+  readonly internalMessage: string;
+
   constructor(
-    public readonly code: ApiErrorCode,
+    code: ApiErrorCode,
     message: string = code,
   ) {
-    super(message);
+    const status = statusForApiError(code);
+    super(
+      code,
+      status >= 500
+        ? { message: code, status, cause: new Error(message) }
+        : { message, status },
+    );
+    this.internalMessage = message;
     this.name = "IdentityApiError";
   }
 }

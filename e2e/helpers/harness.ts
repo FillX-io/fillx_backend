@@ -20,12 +20,11 @@ const e2eEnvPath = path.resolve(
   "../../.env.e2e",
 );
 
-const e2eEnvKeys = [
-  "E2E_DATABASE_ADMIN_URL",
-  "MINIO_ROOT_USER",
-  "MINIO_ROOT_PASSWORD",
+const avatarEnvKeys = [
   "AWS_ACCESS_KEY_ID",
   "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_SECURITY_TOKEN",
   "AVATAR_S3_ENDPOINT",
   "AVATAR_S3_FORCE_PATH_STYLE",
   "AVATAR_S3_REGION",
@@ -34,7 +33,19 @@ const e2eEnvKeys = [
   "AVATAR_PUBLIC_BASE_URL",
 ] as const;
 
-const e2eEnvKeySet = new Set<string>(e2eEnvKeys);
+const importGuardEnvKeys = [
+  "E2E_DATABASE_ADMIN_URL",
+] as const;
+
+const e2eEnvKeys = [
+  ...importGuardEnvKeys,
+  "MINIO_ROOT_USER",
+  "MINIO_ROOT_PASSWORD",
+  ...avatarEnvKeys,
+] as const;
+
+const importGuardEnvKeySet = new Set<string>(importGuardEnvKeys);
+const avatarEnvKeySet = new Set<string>(avatarEnvKeys);
 
 const runtimeEnvKeys = [
   "DATABASE_URL",
@@ -50,14 +61,21 @@ function snapshotEnv(): Map<string, string | undefined> {
   return new Map(managedEnvKeys.map((key) => [key, process.env[key]]));
 }
 
+function restoreOptional(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
 function restoreEnv(previousEnv: Map<string, string | undefined>): void {
   for (const [key, value] of previousEnv) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    restoreOptional(key, value);
   }
 }
 
-function loadE2EEnv(): void {
+function loadE2EEnvValues(input: {
+  keys: ReadonlySet<string>;
+  forceExisting: boolean;
+}): void {
   if (!existsSync(e2eEnvPath)) return;
 
   for (const line of readFileSync(e2eEnvPath, "utf8").split(/\r?\n/)) {
@@ -68,13 +86,24 @@ function loadE2EEnv(): void {
     if (separatorIndex === -1) continue;
 
     const key = trimmed.slice(0, separatorIndex);
-    if (!e2eEnvKeySet.has(key)) continue;
-    if (process.env[key] !== undefined) continue;
+    if (!input.keys.has(key)) continue;
+    if (!input.forceExisting && process.env[key] !== undefined) continue;
     process.env[key] = trimmed.slice(separatorIndex + 1);
   }
 }
 
-loadE2EEnv();
+function loadMissingE2EEnvForImportGuards(): void {
+  loadE2EEnvValues({ keys: importGuardEnvKeySet, forceExisting: false });
+}
+
+function forceLoadAvatarE2EEnvForServer(): void {
+  for (const key of avatarEnvKeys) {
+    delete process.env[key];
+  }
+  loadE2EEnvValues({ keys: avatarEnvKeySet, forceExisting: true });
+}
+
+loadMissingE2EEnvForImportGuards();
 
 export async function setupE2E(t: TestContext) {
   const previousEnv = snapshotEnv();
@@ -82,10 +111,8 @@ export async function setupE2E(t: TestContext) {
   const databaseName = makeDatabaseName(t.name);
   const databaseUrl = databaseUrlFromAdmin(adminUrl, databaseName);
 
-  await createDatabase(databaseName);
-
   let server: Awaited<ReturnType<typeof startTestServer>> | null = null;
-  let shouldDrop = true;
+  let shouldDrop = false;
 
   async function cleanup(input: { drop: boolean; originalError?: unknown } = { drop: true }) {
     const errors: unknown[] = [];
@@ -127,6 +154,9 @@ export async function setupE2E(t: TestContext) {
 
   let privy: Awaited<ReturnType<typeof createTestPrivy>> | null = null;
   try {
+    forceLoadAvatarE2EEnvForServer();
+    await createDatabase(databaseName);
+    shouldDrop = true;
     privy = await createTestPrivy();
     process.env.DATABASE_URL = databaseUrl;
     process.env.FILLX_JWT_SECRET = "e2e-fillx-session-secret";
