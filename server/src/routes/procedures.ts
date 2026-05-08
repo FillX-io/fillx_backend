@@ -9,6 +9,7 @@ import {
   clearFillxSessionCookies,
   setFillxSessionCookie,
 } from "../identity/session.js";
+import { createWalletSessionService } from "../identity/wallet-session.service.js";
 
 export const pub = implement(contract).$context<AppContext>();
 
@@ -92,5 +93,34 @@ export async function protectedProcedure<T>(
   }) => Promise<T>,
 ): Promise<T> {
   const user = await resolveProtectedUser(context);
+  return handler({ context: context as ProtectedAppContext, user });
+}
+
+export async function resolveActiveWalletSessionUser(
+  context: AppContext,
+): Promise<FillxUser> {
+  const repos = createIdentityRepos(context.db);
+  const service = createWalletSessionService(repos);
+  const session = await service.resolveVerifiedSession({
+    sessionToken: context.fillxSessionToken,
+    activeWalletKey: context.activeWalletKey,
+  });
+  if (!session) throw apiError("AUTH_REQUIRED");
+
+  const user = await repos.users.findById(session.userId);
+  if (!user) throw apiError("AUTH_REQUIRED");
+
+  context.userIdentity = { type: "fillx", userId: user.id };
+  return user;
+}
+
+export async function walletSessionProcedure<T>(
+  context: AppContext,
+  handler: (input: {
+    context: ProtectedAppContext;
+    user: FillxUser;
+  }) => Promise<T>,
+): Promise<T> {
+  const user = await resolveActiveWalletSessionUser(context);
   return handler({ context: context as ProtectedAppContext, user });
 }

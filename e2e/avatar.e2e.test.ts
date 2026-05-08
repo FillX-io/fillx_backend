@@ -69,7 +69,7 @@ test("wallet user uploads, publishes, fetches, and removes an avatar through Min
 });
 
 test("avatar upload endpoints require an authenticated active FillX wallet", async (t) => {
-  const { baseUrl, client, createClient } = await setupE2E(t);
+  const { baseUrl, client, createClient, privy } = await setupE2E(t);
 
   await assertAuthRequired(
     client.identity.requestAvatarUpload({
@@ -83,6 +83,25 @@ test("avatar upload endpoints require an authenticated active FillX wallet", asy
   await assertAuthRequired(
     client.identity.removeAvatar(),
   );
+
+  const privyToken = await privy.createAccessToken({
+    privyUserId: "did:privy:avatar-only",
+  });
+  const { client: privyClient } = createClient({
+    baseUrl,
+    headers: { authorization: `Bearer ${privyToken}` },
+  });
+
+  await assertAuthRequired(
+    privyClient.identity.requestAvatarUpload({
+      contentType: "image/png",
+      contentLength: tinyPngAvatar.byteLength,
+    }),
+  );
+  await assertAuthRequired(
+    privyClient.identity.finalizeAvatarUpload({ uploadId: randomUUID() }),
+  );
+  await assertAuthRequired(privyClient.identity.removeAvatar());
 
   const { walletKey } = await claimAvatarE2EUser(client);
 

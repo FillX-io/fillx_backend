@@ -31,6 +31,7 @@ import {
   pub,
   resolveProtectedUser,
   setBrowserSessionCookie,
+  walletSessionProcedure,
 } from "./procedures.js";
 
 function serializeUser(user: {
@@ -304,7 +305,7 @@ export const identityRoutes = {
 
     requestAvatarUpload: pub.identity.requestAvatarUpload.handler(
       async ({ input, context }) =>
-        protectedProcedure(context, async ({ user }) =>
+        walletSessionProcedure(context, async ({ user }) =>
           createAvatarServiceForContext(context).requestAvatarUpload({
             userId: user.id,
             contentType: input.contentType,
@@ -315,7 +316,7 @@ export const identityRoutes = {
 
     finalizeAvatarUpload: pub.identity.finalizeAvatarUpload.handler(
       async ({ input, context }) =>
-        protectedProcedure(context, async ({ user }) => {
+        walletSessionProcedure(context, async ({ user }) => {
           const updated = await createAvatarServiceForContext(
             context,
           ).finalizeAvatarUpload({
@@ -327,7 +328,7 @@ export const identityRoutes = {
     ),
 
     removeAvatar: pub.identity.removeAvatar.handler(async ({ context }) =>
-      protectedProcedure(context, async ({ user }) => {
+      walletSessionProcedure(context, async ({ user }) => {
         const updated = await createAvatarServiceForContext(context).removeAvatar({
           userId: user.id,
         });
