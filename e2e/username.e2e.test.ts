@@ -309,14 +309,19 @@ test("Privy token does not resolve to an already claimed wallet-backed profile",
     challengeId: walletChallenge.challengeId,
     signature: await signEvmMessage(walletChallenge.message),
   });
+  const { client: activeWalletClient } = createClient({
+    baseUrl,
+    cookieJar,
+    headers: activeWalletHeaders(evmWalletKey(evmWallet.address)),
+  });
 
-  const walletNationality = await client.identity.updateDisplayName({
+  const walletNationality = await activeWalletClient.identity.updateDisplayName({
     nationality: "ca",
   });
   assert.equal(walletNationality.user.id, walletUser.user.id);
   assert.equal(walletNationality.user.nationality, "CA");
 
-  const walletCurrent = await client.identity.getCurrentUser();
+  const walletCurrent = await activeWalletClient.identity.getCurrentUser();
   assert.equal(walletCurrent.user?.nationality, "CA");
 
   const token = await privy.createAccessToken({
