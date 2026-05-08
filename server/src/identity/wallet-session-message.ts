@@ -16,17 +16,35 @@ export type WalletSessionMessageInput = {
 export function buildWalletSessionMessage(
   input: WalletSessionMessageInput,
 ): string {
-  return [
-    `${input.domain} wants you to sign in to FillX:`,
+  const accountName = input.chainType === "evm" ? "Ethereum" : "Solana";
+  const sessionResource = new URL("/session", input.uri).toString();
+  const actionResource = `fillx:session:action:${input.action.replaceAll(
+    "_",
+    "-",
+  )}`;
+
+  const lines = [
+    `${input.domain} wants you to sign in with your ${accountName} account:`,
+    input.walletAddress,
     "",
-    `Wallet: ${input.walletAddress}`,
-    `Action: ${input.action}`,
+    "Sign in to FillX. This will not create a transaction or move funds.",
+    "",
     `URI: ${input.uri}`,
     `Version: ${input.version}`,
-    `Chain Type: ${input.chainType}`,
-    `Chain ID: ${input.chainId ?? "n/a"}`,
+  ];
+
+  if (input.chainId !== null) {
+    lines.push(`Chain ID: ${input.chainId}`);
+  }
+
+  lines.push(
     `Nonce: ${input.nonce}`,
     `Issued At: ${input.issuedAt}`,
     `Expiration Time: ${input.expiresAt}`,
-  ].join("\n");
+    "Resources:",
+    `- ${sessionResource}`,
+    `- ${actionResource}`,
+  );
+
+  return lines.join("\n");
 }

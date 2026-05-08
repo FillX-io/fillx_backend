@@ -264,6 +264,14 @@ export const contract = oc.router({
         }),
       )
       .output(CurrentUserResponse),
+    verifyWalletSession: oc
+      .input(
+        z.object({
+          challengeId: z.string(),
+          signature: z.string(),
+        }),
+      )
+      .output(CurrentUserResponse),
     updateDisplayName: oc
       .input(
         z.object({

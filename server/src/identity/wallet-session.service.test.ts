@@ -419,6 +419,43 @@ test("resolveCurrentUser ignores expired and revoked wallet sessions", async () 
   assert.equal(current.user, null);
 });
 
+test("requestWalletSessionChallenge returns a standards-shaped sign-in message", async () => {
+  const { repos, challenges } = makeRepos();
+  const service = createWalletSessionService(repos, {
+    now: () => NOW,
+    nonce: () => "nonce-1",
+  });
+
+  const result = await service.requestWalletSessionChallenge({
+    walletAddress: EVM_ADDRESS,
+    chainType: "evm",
+    chainId: 1,
+  });
+
+  assert.equal(result.challengeId, "challenge-1");
+  assert.equal(result.expiresAt, "2026-05-07T12:10:00.000Z");
+  assert.equal(
+    result.message,
+    [
+      "fillx.io wants you to sign in with your Ethereum account:",
+      EVM_ADDRESS,
+      "",
+      "Sign in to FillX. This will not create a transaction or move funds.",
+      "",
+      "URI: https://fillx.io/session/sign-in",
+      "Version: 1",
+      "Chain ID: 1",
+      "Nonce: nonce-1",
+      "Issued At: 2026-05-07T12:00:00.000Z",
+      "Expiration Time: 2026-05-07T12:10:00.000Z",
+      "Resources:",
+      "- https://fillx.io/session",
+      "- fillx:session:action:sign-in",
+    ].join("\n"),
+  );
+  assert.equal(challenges.get(result.challengeId)?.message, result.message);
+});
+
 test("createWalletSession consumes a valid challenge and returns a rotated opaque token", async () => {
   const { repos, users, wallets, challenges, createdTokens } = makeRepos();
   users.set("user-1", makeUser({ username: "alice" }));

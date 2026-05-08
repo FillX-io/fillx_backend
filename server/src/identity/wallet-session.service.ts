@@ -427,7 +427,7 @@ export function createWalletSessionService(
         domain: "fillx.io",
         walletAddress,
         action: "sign_in",
-        uri: "https://fillx.io",
+        uri: "https://fillx.io/session/sign-in",
         version: "1",
         chainType: input.chainType,
         chainId: input.chainId,

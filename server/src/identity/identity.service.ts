@@ -83,6 +83,10 @@ export function createIdentityService(
   }
 
   return {
+    async createUserFromWalletProof(): Promise<FillxUser> {
+      return createGeneratedUser();
+    },
+
     async getCurrentUser(input: {
       auth: CurrentUserAuth;
     }): Promise<CurrentUserResult> {

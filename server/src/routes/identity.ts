@@ -18,7 +18,10 @@ import {
   createUsernameService,
   type UsernameServiceRepos,
 } from "../identity/username.service.js";
-import { normalizeWalletAddress } from "../identity/wallet.js";
+import {
+  normalizeWalletAddress,
+  verifyWalletSignature,
+} from "../identity/wallet.js";
 import {
   createWalletSessionService,
   partsFromFillxWalletKey,
@@ -153,6 +156,54 @@ async function authenticatedUserIdFromContext(
   return null;
 }
 
+async function verifiedWalletSessionUser(input: {
+  context: AppContext;
+  repos: ReturnType<typeof createIdentityRepos>;
+  chainType: "evm" | "solana";
+  walletAddress: string;
+}) {
+  const existingWallet = await input.repos.wallets.findByWallet({
+    chainType: input.chainType,
+    walletAddress: input.walletAddress,
+  });
+  if (existingWallet) {
+    const existingUser = await input.repos.users.findById(
+      existingWallet.user_id,
+    );
+    if (!existingUser) throw apiError("USER_NOT_FOUND");
+    return existingUser;
+  }
+
+  const identityService = createIdentityService({
+    users: input.repos.users,
+    authIdentities: input.repos.authIdentities,
+  });
+  const current = await identityService.getCurrentUser({
+    auth: currentUserAuthFromContext(input.context),
+  });
+  const user =
+    current.user ?? (await identityService.createUserFromWalletProof());
+
+  const primaryWallet = await input.repos.wallets.findPrimaryByUserId(user.id);
+  if (
+    primaryWallet &&
+    (primaryWallet.chain_type !== input.chainType ||
+      primaryWallet.wallet_address !== input.walletAddress)
+  ) {
+    throw apiError("PRIMARY_WALLET_ALREADY_SET");
+  }
+
+  if (!primaryWallet) {
+    await input.repos.wallets.createPrimaryWallet({
+      userId: user.id,
+      chainType: input.chainType,
+      walletAddress: input.walletAddress,
+    });
+  }
+
+  return user;
+}
+
 function usernameClaimRateLimitWalletKey(input: {
   chainType: "evm" | "solana";
   walletAddress: string;
@@ -282,6 +333,72 @@ export const identityRoutes = {
           signature: input.signature,
         });
         setBrowserSessionCookie(context, result.sessionToken);
+        return serializeCurrentWalletUser(result.current);
+      },
+    ),
+
+    verifyWalletSession: pub.identity.verifyWalletSession.handler(
+      async ({ input, context }) => {
+        const result = await context.db.transaction(async (tx) => {
+          const repos = createIdentityRepos(
+            tx as unknown as AppContext["db"],
+          );
+          const challenge =
+            await repos.walletSignInChallenges.findByIdForUpdate(
+              input.challengeId,
+            );
+          if (!challenge) throw apiError("CHALLENGE_NOT_FOUND");
+          if (challenge.consumed_at) throw apiError("CHALLENGE_ALREADY_USED");
+          if (challenge.expires_at.getTime() <= Date.now()) {
+            throw apiError("CHALLENGE_EXPIRED");
+          }
+
+          const isValid = await verifyWalletSignature({
+            chainType: challenge.chain_type,
+            walletAddress: challenge.wallet_address,
+            message: challenge.message,
+            signature: input.signature,
+          });
+          if (!isValid) throw apiError("SIGNATURE_INVALID");
+
+          const user = await verifiedWalletSessionUser({
+            context,
+            repos,
+            chainType: challenge.chain_type,
+            walletAddress: challenge.wallet_address,
+          });
+
+          const consumed =
+            await repos.walletSignInChallenges.consumeIfUnused(challenge.id);
+          if (!consumed) throw apiError("CHALLENGE_ALREADY_USED");
+
+          const remembered = await createWalletSessionService(
+            repos,
+          ).rememberVerifiedWallet({
+            sessionToken: context.fillxSessionToken,
+            walletAddress: challenge.wallet_address,
+            chainType: challenge.chain_type,
+            chainId: challenge.chain_id,
+            userId: user.id,
+          });
+
+          return {
+            sessionToken: remembered.sessionToken,
+            current: {
+              state: "authenticated" as const,
+              walletKey: remembered.walletKey,
+              user,
+              guest: null,
+              resumeExpiresAt: remembered.expiresAt,
+            },
+          };
+        });
+
+        setBrowserSessionCookie(context, result.sessionToken);
+        context.userIdentity = {
+          type: "fillx",
+          userId: result.current.user.id,
+        };
         return serializeCurrentWalletUser(result.current);
       },
     ),
