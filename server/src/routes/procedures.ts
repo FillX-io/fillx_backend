@@ -5,7 +5,10 @@ import type { AppContext, UserIdentity } from "../identity/context.js";
 import { apiError } from "../identity/errors.js";
 import { createIdentityService } from "../identity/identity.service.js";
 import { createIdentityRepos } from "../identity/repositories.js";
-import { setFillxSessionCookie, signFillxSession } from "../identity/session.js";
+import {
+  clearFillxSessionCookies,
+  setFillxSessionCookie,
+} from "../identity/session.js";
 
 export const pub = implement(contract).$context<AppContext>();
 
@@ -14,24 +17,21 @@ export type ProtectedAppContext = AppContext & {
   userIdentity: FillxUserIdentity;
 };
 
-function isSecureCookieEnv(context: AppContext): boolean {
+export function isSecureCookieEnv(context: AppContext): boolean {
   return context.env.nodeEnv !== "development" && context.env.nodeEnv !== "test";
 }
 
-export function requireFillxSessionSecret(context: AppContext): string {
-  if (!context.env.fillxJwtSecret) throw apiError("SESSION_NOT_CONFIGURED");
-  return context.env.fillxJwtSecret;
+export function setBrowserSessionCookie(
+  context: AppContext,
+  token: string,
+): void {
+  setFillxSessionCookie(context.resHeaders, token, {
+    secure: isSecureCookieEnv(context),
+  });
 }
 
-export async function issueFillxSession(
-  context: AppContext,
-  userId: string,
-): Promise<void> {
-  const token = await signFillxSession({
-    userId,
-    secret: requireFillxSessionSecret(context),
-  });
-  setFillxSessionCookie(context.resHeaders, token, {
+export function clearBrowserSessionCookies(context: AppContext): void {
+  clearFillxSessionCookies(context.resHeaders, {
     secure: isSecureCookieEnv(context),
   });
 }
@@ -66,7 +66,6 @@ export async function resolveProtectedUser(
   }
 
   if (context.auth.type === "privy") {
-    requireFillxSessionSecret(context);
     const service = createIdentityService({
       users: repos.users,
       authIdentities: repos.authIdentities,
@@ -79,7 +78,6 @@ export async function resolveProtectedUser(
     });
     if (!current.user) throw apiError("AUTH_REQUIRED");
     context.userIdentity = { type: "fillx", userId: current.user.id };
-    await issueFillxSession(context, current.user.id);
     return current.user;
   }
 

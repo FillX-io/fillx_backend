@@ -8,7 +8,7 @@ export function normalizeWalletAddress(
   walletAddress: string,
 ): string {
   if (chainType === "evm") {
-    return getAddress(walletAddress).toLowerCase();
+    return getAddress(walletAddress.trim().replace(/^0X/, "0x")).toLowerCase();
   }
 
   if (chainType === "solana") {

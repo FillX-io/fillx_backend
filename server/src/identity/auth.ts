@@ -1,10 +1,13 @@
 import { getCookie } from "@orpc/server/helpers";
 import { importSPKI, jwtVerify } from "jose";
+import type { Db } from "../db/client.js";
+import { createIdentityRepos } from "./repositories.js";
+import { readFillxSessionCookie } from "./session.js";
 import {
-  FILLX_SESSION_COOKIE,
-  verifyFillxSessionToken,
-  type VerifiedFillxSession,
-} from "./session.js";
+  createWalletSessionService,
+  parseActiveWalletSelector,
+  type VerifiedFillxWalletSession,
+} from "./wallet-session.service.js";
 
 export type VerifiedPrivyAuth = {
   privyUserId: string;
@@ -13,13 +16,12 @@ export type VerifiedPrivyAuth = {
 
 export type RequestAuth =
   | { type: "privy"; privy: VerifiedPrivyAuth }
-  | { type: "fillx"; session: VerifiedFillxSession }
+  | { type: "fillx"; session: VerifiedFillxWalletSession }
   | { type: "anonymous" };
 
 export type IdentityEnv = {
   privyAppId: string | null;
   privyJwtVerificationKey: string | null;
-  fillxJwtSecret: string | null;
   nodeEnv: string;
 };
 
@@ -27,7 +29,6 @@ export function getIdentityEnv(): IdentityEnv {
   return {
     privyAppId: process.env.PRIVY_APP_ID ?? null,
     privyJwtVerificationKey: process.env.PRIVY_JWT_VERIFICATION_KEY ?? null,
-    fillxJwtSecret: process.env.FILLX_JWT_SECRET ?? null,
     nodeEnv: process.env.NODE_ENV ?? "development",
   };
 }
@@ -85,28 +86,36 @@ async function getPrivyAuthFromToken(
 
 async function getFillxAuthFromCookie(
   headers: Headers,
-  env: IdentityEnv,
+  db: Db | null,
 ): Promise<RequestAuth | null> {
-  const token = getCookie(headers, FILLX_SESSION_COOKIE);
-  if (!token || !env.fillxJwtSecret) return null;
+  if (!db) return null;
+  const token = readFillxSessionCookie(headers);
+  const activeWalletKey = getActiveWalletKey(headers);
+  if (!token || !activeWalletKey) return null;
 
-  const session = await verifyFillxSessionToken({
-    token,
-    secret: env.fillxJwtSecret,
+  const service = createWalletSessionService(createIdentityRepos(db));
+  const session = await service.resolveVerifiedSession({
+    sessionToken: token,
+    activeWalletKey,
   });
   if (!session) return null;
 
   return { type: "fillx", session };
 }
 
+export function getActiveWalletKey(headers: Headers): string | null {
+  return parseActiveWalletSelector(headers.get("x-fillx-active-wallet"));
+}
+
 export async function getRequestAuth(
   headers: Headers,
   env = getIdentityEnv(),
+  db: Db | null = null,
 ): Promise<RequestAuth> {
   const bearerPrivy = await getPrivyAuthFromToken(getBearerToken(headers), env);
   if (bearerPrivy) return bearerPrivy;
 
-  const fillx = await getFillxAuthFromCookie(headers, env);
+  const fillx = await getFillxAuthFromCookie(headers, db);
   if (fillx) return fillx;
 
   const cookiePrivy = await getPrivyAuthFromToken(

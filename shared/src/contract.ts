@@ -5,6 +5,11 @@ import { z } from "zod";
 const JsonData = z.any();
 const ChainType = z.enum(["evm", "solana"]);
 const UsernameStatus = z.enum(["generated", "claimed"]);
+const FillxPrimaryWallet = z.object({
+  chainType: ChainType,
+  walletAddress: z.string(),
+  walletKey: z.string(),
+});
 const FillxUserProfile = z.object({
   id: z.string(),
   username: z.string(),
@@ -12,11 +17,29 @@ const FillxUserProfile = z.object({
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   hasClaimedUsername: z.boolean(),
+  primaryWallet: FillxPrimaryWallet.nullable(),
 });
 const GuestResponse = z.object({ isGuest: z.literal(true) });
+const PublicFillxProfile = z.object({
+  userId: z.string(),
+  username: z.string(),
+  usernameStatus: UsernameStatus,
+  displayName: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  primaryWallet: FillxPrimaryWallet,
+});
 const CurrentUserResponse = z.object({
+  state: z.enum([
+    "no_active_wallet",
+    "authenticated",
+    "public_profile_requires_signature",
+    "no_profile",
+  ]),
+  walletKey: z.string().optional(),
   user: FillxUserProfile.nullable(),
   guest: GuestResponse.nullable(),
+  profile: PublicFillxProfile.optional(),
+  resumeExpiresAt: z.string().optional(),
 });
 const PublicWalletProfile = z.object({
   walletAddress: z.string(),
@@ -213,6 +236,30 @@ export const contract = oc.router({
   // ─── Identity ──────────────────────────────────────
   identity: oc.router({
     getCurrentUser: oc.output(CurrentUserResponse),
+    clearSession: oc.output(z.object({ ok: z.literal(true) })),
+    requestWalletSessionChallenge: oc
+      .input(
+        z.object({
+          walletAddress: z.string(),
+          chainType: ChainType,
+          chainId: z.number().int().positive().nullable().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          challengeId: z.string(),
+          expiresAt: z.string(),
+          message: z.string(),
+        }),
+      ),
+    createWalletSession: oc
+      .input(
+        z.object({
+          challengeId: z.string(),
+          signature: z.string(),
+        }),
+      )
+      .output(CurrentUserResponse),
     updateDisplayName: oc
       .input(z.object({ displayName: z.string().max(50) }))
       .output(z.object({ user: FillxUserProfile })),

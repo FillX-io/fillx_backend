@@ -192,6 +192,102 @@ export const usernameClaimChallenges = pgTable(
   }),
 );
 
+export const fillxSessionFamilies = pgTable(
+  "fillx_session_families",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    token_hash: text("token_hash").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    last_seen_at: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    absolute_expires_at: timestamp("absolute_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    revoked_at: timestamp("revoked_at", { withTimezone: true }),
+    revoke_reason: text("revoke_reason"),
+  },
+  (table) => ({
+    tokenHashIdx: uniqueIndex("fillx_session_families_token_hash_idx").on(
+      table.token_hash,
+    ),
+    expiryIdx: index("fillx_session_families_expiry_idx").on(
+      table.absolute_expires_at,
+    ),
+  }),
+);
+
+export const fillxWalletSessions = pgTable(
+  "fillx_wallet_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    family_id: uuid("family_id")
+      .notNull()
+      .references(() => fillxSessionFamilies.id, { onDelete: "cascade" }),
+    wallet_key: text("wallet_key").notNull(),
+    wallet_address: text("wallet_address").notNull(),
+    wallet_namespace: text("wallet_namespace").$type<ChainType>().notNull(),
+    signature_scheme: text("signature_scheme").notNull(),
+    last_signed_chain: text("last_signed_chain"),
+    signed_at: timestamp("signed_at", { withTimezone: true }).notNull(),
+    profile_user_id: uuid("profile_user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    last_used_at: timestamp("last_used_at", { withTimezone: true }).notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revoked_at: timestamp("revoked_at", { withTimezone: true }),
+    revoke_reason: text("revoke_reason"),
+  },
+  (table) => ({
+    activeUnique: uniqueIndex("fillx_wallet_sessions_active_unique_idx")
+      .on(table.family_id, table.wallet_key)
+      .where(sql`${table.revoked_at} is null`),
+    lookupIdx: index("fillx_wallet_sessions_lookup_idx").on(
+      table.family_id,
+      table.wallet_key,
+      table.expires_at,
+    ),
+    expiryIdx: index("fillx_wallet_sessions_expiry_idx").on(table.expires_at),
+    walletNamespaceCheck: check(
+      "fillx_wallet_sessions_wallet_namespace_check",
+      sql`${table.wallet_namespace} in ('evm', 'solana')`,
+    ),
+  }),
+);
+
+export const walletSignInChallenges = pgTable(
+  "wallet_sign_in_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    wallet_key: text("wallet_key").notNull(),
+    wallet_address: text("wallet_address").notNull(),
+    chain_type: text("chain_type").$type<ChainType>().notNull(),
+    chain_id: integer("chain_id"),
+    nonce: text("nonce").notNull(),
+    message: text("message").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumed_at: timestamp("consumed_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    nonceUnique: unique("wallet_sign_in_challenges_nonce_unique").on(
+      table.nonce,
+    ),
+    walletCreatedIdx: index("wallet_sign_in_challenges_wallet_created_idx").on(
+      table.wallet_key,
+      table.created_at.desc(),
+    ),
+    chainTypeCheck: check(
+      "wallet_sign_in_challenges_chain_type_check",
+      sql`${table.chain_type} in ('evm', 'solana')`,
+    ),
+  }),
+);
+
 export const usernameClaims = pgTable(
   "username_claims",
   {
@@ -231,6 +327,10 @@ export type NewFillxUser = typeof fillxUsers.$inferInsert;
 export type UserWallet = typeof userWallets.$inferSelect;
 export type UserAuthIdentity = typeof userAuthIdentities.$inferSelect;
 export type UserOrderlyAccount = typeof userOrderlyAccounts.$inferSelect;
+export type FillxSessionFamily = typeof fillxSessionFamilies.$inferSelect;
+export type FillxWalletSession = typeof fillxWalletSessions.$inferSelect;
+export type WalletSignInChallenge =
+  typeof walletSignInChallenges.$inferSelect;
 export type UsernameClaimChallenge =
   typeof usernameClaimChallenges.$inferSelect;
 export type UsernameClaim = typeof usernameClaims.$inferSelect;

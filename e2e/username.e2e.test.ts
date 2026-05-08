@@ -29,10 +29,22 @@ async function countFillxUsers(): Promise<number> {
 
 function assertFillxCookie(cookie: string | undefined): void {
   assert.ok(cookie, "expected Set-Cookie header");
-  assert.match(cookie, /fillx-session=/);
+  assert.match(cookie, /(?:__Host-fillx_sid|fillx_sid)=/);
   assert.match(cookie, /HttpOnly/);
   assert.match(cookie, /SameSite=Lax/);
   assert.match(cookie, /Path=\//);
+}
+
+function evmWalletKey(address: string): string {
+  return `evm:${address.toLowerCase()}`;
+}
+
+function solanaWalletKey(address: string): string {
+  return `solana:${address}`;
+}
+
+function activeWalletHeaders(walletKey: string): Record<string, string> {
+  return { "x-fillx-active-wallet": walletKey };
 }
 
 async function assertRejects(
@@ -54,6 +66,7 @@ test("guest current-user is non-persistent and cannot claim without wallet proof
   const { client } = await setupE2E(t);
 
   assert.deepEqual(await client.identity.getCurrentUser(), {
+    state: "no_active_wallet",
     user: null,
     guest: { isGuest: true },
   });
@@ -76,7 +89,7 @@ test("guest current-user is non-persistent and cannot claim without wallet proof
 });
 
 test("EVM wallet-only claim issues a FillX session and supports uppercase wallet lookup", async (t) => {
-  const { client, cookieJar } = await setupE2E(t);
+  const { baseUrl, client, cookieJar, createClient } = await setupE2E(t);
   const challenge = await client.username.requestClaimChallenge({
     username: "evmclaim",
     walletAddress: evmWallet.address,
@@ -93,16 +106,95 @@ test("EVM wallet-only claim issues a FillX session and supports uppercase wallet
   assert.equal(claimed.user.usernameStatus, "claimed");
   assertFillxCookie(cookieJar.lastSetCookieHeader());
 
-  assert.deepEqual(await client.identity.getCurrentUser(), {
-    user: claimed.user,
-    guest: null,
+  assert.equal((await client.identity.getCurrentUser()).state, "no_active_wallet");
+
+  const { client: activeWalletClient } = createClient({
+    baseUrl,
+    cookieJar,
+    headers: activeWalletHeaders(evmWalletKey(evmWallet.address)),
   });
+  const current = await activeWalletClient.identity.getCurrentUser();
+  assert.equal(current.state, "authenticated");
+  assert.equal(current.walletKey, evmWalletKey(evmWallet.address));
+  assert.equal(current.user?.id, claimed.user.id);
+  assert.equal(current.user?.username, "evmclaim");
+  assert.equal(
+    current.user?.primaryWallet?.walletKey,
+    evmWalletKey(evmWallet.address),
+  );
 
   const profile = await client.profile.getByWallets({
     walletAddresses: [evmWallet.address.toUpperCase()],
   });
   assert.equal(profile.profiles.length, 1);
   assert.equal(profile.profiles[0].username, "evmclaim");
+});
+
+test("wallet switching never returns the previous FillX user and known wallets resume", async (t) => {
+  const { baseUrl, client, cookieJar, createClient } = await setupE2E(t);
+  const walletAChallenge = await client.username.requestClaimChallenge({
+    username: "walleta",
+    walletAddress: evmWallet.address,
+    chainType: "evm",
+    chainId: 1,
+  });
+  const walletA = await client.username.claim({
+    challengeId: walletAChallenge.challengeId,
+    signature: await signEvmMessage(walletAChallenge.message),
+  });
+
+  const { client: walletAClient } = createClient({
+    baseUrl,
+    cookieJar,
+    headers: activeWalletHeaders(evmWalletKey(evmWallet.address)),
+  });
+  const currentA = await walletAClient.identity.getCurrentUser();
+  assert.equal(currentA.state, "authenticated");
+  assert.equal(currentA.user?.id, walletA.user.id);
+
+  const { client: otherBrowserClient } = createClient({ baseUrl });
+  const walletBClaimChallenge =
+    await otherBrowserClient.username.requestClaimChallenge({
+      username: "walletb",
+      walletAddress: secondEvmWallet.address,
+      chainType: "evm",
+      chainId: 1,
+    });
+  const walletB = await otherBrowserClient.username.claim({
+    challengeId: walletBClaimChallenge.challengeId,
+    signature: await signSecondEvmMessage(walletBClaimChallenge.message),
+  });
+
+  const { client: walletBClient } = createClient({
+    baseUrl,
+    cookieJar,
+    headers: activeWalletHeaders(evmWalletKey(secondEvmWallet.address)),
+  });
+  const beforeBSignIn = await walletBClient.identity.getCurrentUser();
+  assert.equal(beforeBSignIn.state, "public_profile_requires_signature");
+  assert.equal(beforeBSignIn.user, null);
+  assert.equal(beforeBSignIn.walletKey, evmWalletKey(secondEvmWallet.address));
+  assert.equal(beforeBSignIn.profile?.userId, walletB.user.id);
+  assert.equal(beforeBSignIn.profile?.username, "walletb");
+
+  const walletBSignInChallenge =
+    await walletBClient.identity.requestWalletSessionChallenge({
+      walletAddress: secondEvmWallet.address,
+      chainType: "evm",
+      chainId: 1,
+    });
+  const signedInB = await walletBClient.identity.createWalletSession({
+    challengeId: walletBSignInChallenge.challengeId,
+    signature: await signSecondEvmMessage(walletBSignInChallenge.message),
+  });
+  assert.equal(signedInB.state, "authenticated");
+  assert.equal(signedInB.user?.id, walletB.user.id);
+  assertFillxCookie(cookieJar.lastSetCookieHeader());
+
+  const resumedA = await walletAClient.identity.getCurrentUser();
+  assert.equal(resumedA.state, "authenticated");
+  assert.equal(resumedA.user?.id, walletA.user.id);
+  assert.equal(resumedA.walletKey, evmWalletKey(evmWallet.address));
 });
 
 test("Solana wallet-only claim preserves the original wallet address in profile lookup", async (t) => {
@@ -126,7 +218,7 @@ test("Solana wallet-only claim preserves the original wallet address in profile 
   assert.equal(profile.profiles[0].walletAddress, solanaWalletAddress);
 });
 
-test("FillX session cannot request a username claim for a different primary wallet", async (t) => {
+test("Privy-authenticated user cannot request a username claim for a different primary wallet", async (t) => {
   const { baseUrl, cookieJar, createClient, privy } = await setupE2E(t);
   const token = await privy.createAccessToken({
     privyUserId: "did:privy:primary-wallet",
@@ -148,10 +240,8 @@ test("FillX session cannot request a username claim for a different primary wall
     verified_at: new Date(),
   });
 
-  const { client: fillxSessionClient } = createClient({ baseUrl, cookieJar });
-
   await assertRejects(
-    fillxSessionClient.username.requestClaimChallenge({
+    privyClient.username.requestClaimChallenge({
       username: "otherwallet",
       walletAddress: secondEvmWallet.address,
       chainType: "evm",

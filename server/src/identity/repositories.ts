@@ -1,18 +1,24 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import {
+  fillxSessionFamilies,
   fillxUsers,
+  fillxWalletSessions,
   userAuthIdentities,
   userOrderlyAccounts,
   userWallets,
+  walletSignInChallenges,
   usernameClaimChallenges,
   usernameClaims,
   type ChainType,
   type ClaimStatus,
+  type FillxSessionFamily,
   type FillxUser,
+  type FillxWalletSession,
   type UserAuthIdentity,
   type UserOrderlyAccount,
   type UserWallet,
+  type WalletSignInChallenge,
   type UsernameClaim,
   type UsernameClaimChallenge,
   type UsernameStatus,
@@ -340,6 +346,283 @@ export function createUsernameClaimsRepo(db: DbLike) {
   };
 }
 
+export function createSessionFamiliesRepo(db: DbLike) {
+  return {
+    async findActiveByTokenHash(input: {
+      tokenHash: string;
+      now: Date;
+    }): Promise<FillxSessionFamily | undefined> {
+      return first(
+        await db
+          .select()
+          .from(fillxSessionFamilies)
+          .where(
+            and(
+              eq(fillxSessionFamilies.token_hash, input.tokenHash),
+              isNull(fillxSessionFamilies.revoked_at),
+              gt(fillxSessionFamilies.absolute_expires_at, input.now),
+            ),
+          )
+          .limit(1),
+      );
+    },
+
+    async create(input: {
+      tokenHash: string;
+      expiresAt: Date;
+      now: Date;
+    }): Promise<FillxSessionFamily> {
+      return firstOrThrow(
+        await db
+          .insert(fillxSessionFamilies)
+          .values({
+            token_hash: input.tokenHash,
+            created_at: input.now,
+            last_seen_at: input.now,
+            absolute_expires_at: input.expiresAt,
+          })
+          .returning(),
+      );
+    },
+
+    async rotateToken(input: {
+      familyId: string;
+      tokenHash: string;
+      expiresAt: Date;
+      now: Date;
+    }): Promise<FillxSessionFamily> {
+      return firstOrThrow(
+        await db
+          .update(fillxSessionFamilies)
+          .set({
+            token_hash: input.tokenHash,
+            last_seen_at: input.now,
+            absolute_expires_at: input.expiresAt,
+          })
+          .where(eq(fillxSessionFamilies.id, input.familyId))
+          .returning(),
+      );
+    },
+
+    async touch(input: {
+      familyId: string;
+      now: Date;
+    }): Promise<FillxSessionFamily> {
+      return firstOrThrow(
+        await db
+          .update(fillxSessionFamilies)
+          .set({ last_seen_at: input.now })
+          .where(eq(fillxSessionFamilies.id, input.familyId))
+          .returning(),
+      );
+    },
+
+    async revoke(input: {
+      familyId: string;
+      now: Date;
+      reason: string;
+    }): Promise<void> {
+      await db
+        .update(fillxSessionFamilies)
+        .set({
+          revoked_at: input.now,
+          revoke_reason: input.reason,
+        })
+        .where(eq(fillxSessionFamilies.id, input.familyId));
+    },
+  };
+}
+
+export function createWalletSessionsRepo(db: DbLike) {
+  async function findUnrevoked(input: {
+    familyId: string;
+    walletKey: string;
+  }): Promise<FillxWalletSession | undefined> {
+    return first(
+      await db
+        .select()
+        .from(fillxWalletSessions)
+        .where(
+          and(
+            eq(fillxWalletSessions.family_id, input.familyId),
+            eq(fillxWalletSessions.wallet_key, input.walletKey),
+            isNull(fillxWalletSessions.revoked_at),
+          ),
+        )
+        .limit(1),
+    );
+  }
+
+  async function findActive(input: {
+    familyId: string;
+    walletKey: string;
+    now: Date;
+  }): Promise<FillxWalletSession | undefined> {
+    return first(
+      await db
+        .select()
+        .from(fillxWalletSessions)
+        .where(
+          and(
+            eq(fillxWalletSessions.family_id, input.familyId),
+            eq(fillxWalletSessions.wallet_key, input.walletKey),
+            isNull(fillxWalletSessions.revoked_at),
+            gt(fillxWalletSessions.expires_at, input.now),
+          ),
+        )
+        .limit(1),
+    );
+  }
+
+  return {
+    findActive,
+
+    async upsert(input: {
+      familyId: string;
+      walletKey: string;
+      walletAddress: string;
+      walletNamespace: ChainType;
+      signatureScheme: string;
+      lastSignedChain: string | null;
+      signedAt: Date;
+      profileUserId: string;
+      now: Date;
+      expiresAt: Date;
+    }): Promise<FillxWalletSession> {
+      const existing = await findUnrevoked({
+        familyId: input.familyId,
+        walletKey: input.walletKey,
+      });
+      if (existing) {
+        return firstOrThrow(
+          await db
+            .update(fillxWalletSessions)
+            .set({
+              wallet_address: input.walletAddress,
+              wallet_namespace: input.walletNamespace,
+              signature_scheme: input.signatureScheme,
+              last_signed_chain: input.lastSignedChain,
+              signed_at: input.signedAt,
+              profile_user_id: input.profileUserId,
+              last_used_at: input.now,
+              expires_at: input.expiresAt,
+            })
+            .where(eq(fillxWalletSessions.id, existing.id))
+            .returning(),
+        );
+      }
+
+      return firstOrThrow(
+        await db
+          .insert(fillxWalletSessions)
+          .values({
+            family_id: input.familyId,
+            wallet_key: input.walletKey,
+            wallet_address: input.walletAddress,
+            wallet_namespace: input.walletNamespace,
+            signature_scheme: input.signatureScheme,
+            last_signed_chain: input.lastSignedChain,
+            signed_at: input.signedAt,
+            profile_user_id: input.profileUserId,
+            last_used_at: input.now,
+            expires_at: input.expiresAt,
+          })
+          .returning(),
+      );
+    },
+
+    async touch(input: {
+      walletSessionId: string;
+      now: Date;
+    }): Promise<void> {
+      await db
+        .update(fillxWalletSessions)
+        .set({ last_used_at: input.now })
+        .where(eq(fillxWalletSessions.id, input.walletSessionId));
+    },
+
+    async revokeByFamily(input: {
+      familyId: string;
+      now: Date;
+      reason: string;
+    }): Promise<void> {
+      await db
+        .update(fillxWalletSessions)
+        .set({
+          revoked_at: input.now,
+          revoke_reason: input.reason,
+        })
+        .where(
+          and(
+            eq(fillxWalletSessions.family_id, input.familyId),
+            isNull(fillxWalletSessions.revoked_at),
+          ),
+        );
+    },
+  };
+}
+
+export function createWalletSignInChallengesRepo(db: DbLike) {
+  return {
+    async create(input: {
+      walletKey: string;
+      walletAddress: string;
+      chainType: ChainType;
+      chainId: number | null;
+      nonce: string;
+      message: string;
+      expiresAt: Date;
+      now: Date;
+    }): Promise<WalletSignInChallenge> {
+      return firstOrThrow(
+        await db
+          .insert(walletSignInChallenges)
+          .values({
+            wallet_key: input.walletKey,
+            wallet_address: input.walletAddress,
+            chain_type: input.chainType,
+            chain_id: input.chainId,
+            nonce: input.nonce,
+            message: input.message,
+            expires_at: input.expiresAt,
+            created_at: input.now,
+          })
+          .returning(),
+      );
+    },
+
+    async findByIdForUpdate(
+      id: string,
+    ): Promise<WalletSignInChallenge | undefined> {
+      return first(
+        await db
+          .select()
+          .from(walletSignInChallenges)
+          .where(eq(walletSignInChallenges.id, id))
+          .limit(1)
+          .for("update"),
+      );
+    },
+
+    async consumeIfUnused(
+      id: string,
+    ): Promise<WalletSignInChallenge | undefined> {
+      return first(
+        await db
+          .update(walletSignInChallenges)
+          .set({ consumed_at: new Date() })
+          .where(
+            and(
+              eq(walletSignInChallenges.id, id),
+              isNull(walletSignInChallenges.consumed_at),
+            ),
+          )
+          .returning(),
+      );
+    },
+  };
+}
+
 export async function getProfilesByWallets(
   db: DbLike,
   walletAddresses: string[],
@@ -381,6 +664,9 @@ export function createIdentityRepos(db: DbLike) {
     wallets: createWalletsRepo(db),
     authIdentities: createAuthIdentitiesRepo(db),
     usernameClaims: createUsernameClaimsRepo(db),
+    sessionFamilies: createSessionFamiliesRepo(db),
+    walletSessions: createWalletSessionsRepo(db),
+    walletSignInChallenges: createWalletSignInChallengesRepo(db),
     orderlyAccounts: createOrderlyAccountsRepo(db),
   };
 }

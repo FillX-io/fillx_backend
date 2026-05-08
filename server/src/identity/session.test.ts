@@ -1,74 +1,100 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SignJWT } from "jose";
 import {
-  FILLX_SESSION_COOKIE,
+  DEV_FILLX_SESSION_COOKIE,
+  LEGACY_FILLX_SESSION_COOKIE,
+  SECURE_FILLX_SESSION_COOKIE,
+  clearFillxSessionCookies,
+  createOpaqueSessionToken,
+  hashOpaqueSessionToken,
+  readFillxSessionCookie,
   setFillxSessionCookie,
-  signFillxSession,
-  verifyFillxSessionToken,
 } from "./session.js";
 
-const TEST_NOW = new Date("2026-05-07T00:00:00.000Z");
-const VERY_LONG_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 100;
+test("createOpaqueSessionToken returns non-JWT random tokens", () => {
+  const first = createOpaqueSessionToken();
+  const second = createOpaqueSessionToken();
 
-test("signFillxSession creates a JWT that verifies to the FillX user id", async () => {
-  const token = await signFillxSession({
-    userId: "user-123",
-    secret: "test-secret",
-    now: TEST_NOW,
-    maxAgeSeconds: VERY_LONG_MAX_AGE_SECONDS,
-  });
-
-  const verified = await verifyFillxSessionToken({
-    token,
-    secret: "test-secret",
-  });
-
-  assert.deepEqual(verified, { userId: "user-123" });
+  assert.notEqual(first, second);
+  assert.equal(first.includes("."), false);
+  assert.ok(first.length >= 43);
 });
 
-test("verifyFillxSessionToken rejects tokens signed with a different algorithm", async () => {
-  const token = await new SignJWT({ typ: "fillx-session" })
-    .setProtectedHeader({ alg: "HS384" })
-    .setSubject("user-123")
-    .setIssuedAt(Math.floor(TEST_NOW.getTime() / 1000))
-    .setExpirationTime(
-      Math.floor(TEST_NOW.getTime() / 1000) + VERY_LONG_MAX_AGE_SECONDS,
-    )
-    .sign(new TextEncoder().encode("test-secret"));
+test("hashOpaqueSessionToken hashes tokens deterministically without storing raw value", () => {
+  const token = "opaque-token";
+  const hash = hashOpaqueSessionToken(token);
 
-  assert.equal(
-    await verifyFillxSessionToken({
-      token,
-      secret: "test-secret",
-    }),
-    null,
-  );
+  assert.equal(hash, hashOpaqueSessionToken(token));
+  assert.notEqual(hash, token);
+  assert.match(hash, /^[a-f0-9]{64}$/);
 });
 
-test("verifyFillxSessionToken returns null for invalid tokens", async () => {
-  assert.equal(
-    await verifyFillxSessionToken({
-      token: "not-a-jwt",
-      secret: "test-secret",
-    }),
-    null,
-  );
-});
-
-test("setFillxSessionCookie sets browser-safe cookie attributes", () => {
+test("setFillxSessionCookie uses the secure host cookie name when Secure is enabled", () => {
   const headers = new Headers();
 
-  setFillxSessionCookie(headers, "jwt-value", {
+  setFillxSessionCookie(headers, "opaque-value", {
     secure: true,
     maxAgeSeconds: 60,
   });
 
   const cookie = headers.get("set-cookie") ?? "";
-  assert.match(cookie, new RegExp(`${FILLX_SESSION_COOKIE}=jwt-value`));
+  assert.match(cookie, new RegExp(`${SECURE_FILLX_SESSION_COOKIE}=opaque-value`));
   assert.match(cookie, /HttpOnly/);
   assert.match(cookie, /Secure/);
   assert.match(cookie, /SameSite=Lax/);
   assert.match(cookie, /Path=\//);
   assert.match(cookie, /Max-Age=60/);
+});
+
+test("setFillxSessionCookie uses the dev cookie name without Secure locally", () => {
+  const headers = new Headers();
+
+  setFillxSessionCookie(headers, "opaque-value", {
+    secure: false,
+    maxAgeSeconds: 60,
+  });
+
+  const cookie = headers.get("set-cookie") ?? "";
+  assert.match(cookie, new RegExp(`${DEV_FILLX_SESSION_COOKIE}=opaque-value`));
+  assert.doesNotMatch(cookie, /Secure/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /SameSite=Lax/);
+  assert.match(cookie, /Path=\//);
+});
+
+test("readFillxSessionCookie accepts secure, dev, and legacy cookie names", () => {
+  const headers = new Headers();
+  headers.set(
+    "cookie",
+    [
+      `${LEGACY_FILLX_SESSION_COOKIE}=legacy`,
+      `${DEV_FILLX_SESSION_COOKIE}=dev`,
+      `${SECURE_FILLX_SESSION_COOKIE}=secure`,
+    ].join("; "),
+  );
+
+  assert.equal(readFillxSessionCookie(headers), "secure");
+
+  headers.set(
+    "cookie",
+    `${LEGACY_FILLX_SESSION_COOKIE}=legacy; ${DEV_FILLX_SESSION_COOKIE}=dev`,
+  );
+  assert.equal(readFillxSessionCookie(headers), "dev");
+
+  headers.set("cookie", `${LEGACY_FILLX_SESSION_COOKIE}=legacy`);
+  assert.equal(readFillxSessionCookie(headers), "legacy");
+});
+
+test("clearFillxSessionCookies expires all current and legacy session cookies", () => {
+  const headers = new Headers();
+
+  clearFillxSessionCookies(headers, { secure: true });
+
+  const cookie = headers.get("set-cookie") ?? "";
+  assert.match(cookie, new RegExp(`${SECURE_FILLX_SESSION_COOKIE}=`));
+  assert.match(cookie, new RegExp(`${DEV_FILLX_SESSION_COOKIE}=`));
+  assert.match(cookie, new RegExp(`${LEGACY_FILLX_SESSION_COOKIE}=`));
+  assert.match(cookie, /Max-Age=0/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Path=\//);
 });
