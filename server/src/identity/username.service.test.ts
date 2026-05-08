@@ -16,7 +16,9 @@ function makeUser(input: Partial<FillxUser> = {}): FillxUser {
     username_status:
       input.username_status === undefined ? "generated" : input.username_status,
     display_name: input.display_name === undefined ? null : input.display_name,
-    avatar_url: input.avatar_url === undefined ? null : input.avatar_url,
+    avatar_key: input.avatar_key === undefined ? null : input.avatar_key,
+    avatar_updated_at:
+      input.avatar_updated_at === undefined ? null : input.avatar_updated_at,
     nationality: input.nationality === undefined ? null : input.nationality,
     created_at: input.created_at === undefined ? now : input.created_at,
     updated_at: input.updated_at === undefined ? now : input.updated_at,

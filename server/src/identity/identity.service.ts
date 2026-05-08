@@ -11,7 +11,6 @@ export type IdentityRepos = {
     updateProfile: (input: {
       userId: string;
       displayName?: string | null;
-      avatarUrl?: string | null;
       nationality?: string | null;
     }) => Promise<FillxUser>;
   };
@@ -45,27 +44,6 @@ function normalizeDisplayName(input: string | null): string | null {
     throw new Error("INVALID_DISPLAY_NAME");
   }
   return displayName.length > 0 ? displayName : null;
-}
-
-function normalizeAvatarUrl(input: string | null): string | null {
-  if (input === null) return null;
-
-  const avatarUrl = input.trim();
-  if (avatarUrl.length > 2048) {
-    throw new Error("INVALID_AVATAR_URL");
-  }
-  if (avatarUrl.length === 0) return null;
-
-  try {
-    const url = new URL(avatarUrl);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      throw new Error("INVALID_AVATAR_URL");
-    }
-  } catch {
-    throw new Error("INVALID_AVATAR_URL");
-  }
-
-  return avatarUrl;
 }
 
 function normalizeNationality(input: string | null): string | null {
@@ -141,28 +119,22 @@ export function createIdentityService(
     async updateProfile(input: {
       userId: string;
       displayName?: string | null;
-      avatarUrl?: string | null;
       nationality?: string | null;
     }): Promise<FillxUser> {
       const update: {
         userId: string;
         displayName?: string | null;
-        avatarUrl?: string | null;
         nationality?: string | null;
       } = { userId: input.userId };
 
       if (input.displayName !== undefined) {
         update.displayName = normalizeDisplayName(input.displayName);
       }
-      if (input.avatarUrl !== undefined) {
-        update.avatarUrl = normalizeAvatarUrl(input.avatarUrl);
-      }
       if (input.nationality !== undefined) {
         update.nationality = normalizeNationality(input.nationality);
       }
       if (
         update.displayName === undefined &&
-        update.avatarUrl === undefined &&
         update.nationality === undefined
       ) {
         throw new Error("PROFILE_UPDATE_EMPTY");

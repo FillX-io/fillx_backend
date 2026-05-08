@@ -10,7 +10,9 @@ function makeUser(input: Partial<FillxUser> = {}): FillxUser {
     username_status:
       input.username_status === undefined ? "generated" : input.username_status,
     display_name: input.display_name === undefined ? null : input.display_name,
-    avatar_url: input.avatar_url === undefined ? null : input.avatar_url,
+    avatar_key: input.avatar_key === undefined ? null : input.avatar_key,
+    avatar_updated_at:
+      input.avatar_updated_at === undefined ? null : input.avatar_updated_at,
     nationality: input.nationality === undefined ? null : input.nationality,
     created_at: input.created_at === undefined ? now : input.created_at,
     updated_at: input.updated_at === undefined ? now : input.updated_at,
@@ -132,7 +134,6 @@ function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
   const updates: Array<{
     userId: string;
     displayName?: string | null;
-    avatarUrl?: string | null;
     nationality?: string | null;
   }> = [];
 
@@ -149,8 +150,6 @@ function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
           ...stored,
           display_name:
             input.displayName === undefined ? stored.display_name : input.displayName,
-          avatar_url:
-            input.avatarUrl === undefined ? stored.avatar_url : input.avatarUrl,
           nationality:
             input.nationality === undefined ? stored.nationality : input.nationality,
           updated_at: new Date("2026-05-07T00:01:00.000Z"),
@@ -167,39 +166,21 @@ function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
   };
 }
 
-test("updateProfile trims and updates display name with avatar URL", async () => {
+test("updateProfile trims and updates display name without avatar fields", async () => {
   const { service, updates } = makeProfileUpdateService();
 
   const result = await service.updateProfile({
     userId: "user-1",
     displayName: " FillX Trader ",
-    avatarUrl: " https://example.com/avatar.png ",
   });
 
   assert.equal(result.display_name, "FillX Trader");
-  assert.equal(result.avatar_url, "https://example.com/avatar.png");
   assert.deepEqual(updates, [
     {
       userId: "user-1",
       displayName: "FillX Trader",
-      avatarUrl: "https://example.com/avatar.png",
     },
   ]);
-});
-
-test("updateProfile allows clearing avatar URL without changing display name", async () => {
-  const { service, updates } = makeProfileUpdateService(
-    makeUser({ display_name: "Existing", avatar_url: "https://example.com/a.png" }),
-  );
-
-  const result = await service.updateProfile({
-    userId: "user-1",
-    avatarUrl: null,
-  });
-
-  assert.equal(result.display_name, "Existing");
-  assert.equal(result.avatar_url, null);
-  assert.deepEqual(updates, [{ userId: "user-1", avatarUrl: null }]);
 });
 
 test("updateProfile normalizes lowercase nationality to uppercase", async () => {

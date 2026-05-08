@@ -1,6 +1,7 @@
 import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import {
+  fillxAvatarUploads,
   fillxSessionFamilies,
   fillxUsers,
   fillxWalletSessions,
@@ -12,6 +13,7 @@ import {
   usernameClaims,
   type ChainType,
   type ClaimStatus,
+  type FillxAvatarUpload,
   type FillxSessionFamily,
   type FillxUser,
   type FillxWalletSession,
@@ -101,12 +103,10 @@ export function createUsersRepo(db: DbLike) {
     async updateProfile(input: {
       userId: string;
       displayName?: string | null;
-      avatarUrl?: string | null;
       nationality?: string | null;
     }): Promise<FillxUser> {
       const values: {
         display_name?: string | null;
-        avatar_url?: string | null;
         nationality?: string | null;
         updated_at: Date;
       } = {
@@ -116,9 +116,6 @@ export function createUsersRepo(db: DbLike) {
       if (input.displayName !== undefined) {
         values.display_name = input.displayName;
       }
-      if (input.avatarUrl !== undefined) {
-        values.avatar_url = input.avatarUrl;
-      }
       if (input.nationality !== undefined) {
         values.nationality = input.nationality;
       }
@@ -127,6 +124,26 @@ export function createUsersRepo(db: DbLike) {
         await db
           .update(fillxUsers)
           .set(values)
+          .where(eq(fillxUsers.id, input.userId))
+          .returning(),
+      );
+    },
+
+    async updateAvatar(input: {
+      userId: string;
+      avatarKey: string | null;
+      avatarUpdatedAt: Date | null;
+      now?: Date;
+    }): Promise<FillxUser> {
+      const now = input.now === undefined ? new Date() : input.now;
+      return firstOrThrow(
+        await db
+          .update(fillxUsers)
+          .set({
+            avatar_key: input.avatarKey,
+            avatar_updated_at: input.avatarUpdatedAt,
+            updated_at: now,
+          })
           .where(eq(fillxUsers.id, input.userId))
           .returning(),
       );
@@ -641,6 +658,110 @@ export function createWalletSignInChallengesRepo(db: DbLike) {
   };
 }
 
+export function createAvatarUploadsRepo(db: DbLike) {
+  return {
+    async createPending(input: {
+      uploadId: string;
+      userId: string;
+      incomingBucket: string;
+      incomingKey: string;
+      sourceContentType: string;
+      sourceContentLength: number;
+      now: Date;
+      expiresAt: Date;
+    }): Promise<FillxAvatarUpload> {
+      return firstOrThrow(
+        await db
+          .insert(fillxAvatarUploads)
+          .values({
+            id: input.uploadId,
+            user_id: input.userId,
+            incoming_bucket: input.incomingBucket,
+            incoming_key: input.incomingKey,
+            source_content_type: input.sourceContentType,
+            source_content_length: input.sourceContentLength,
+            status: "pending",
+            created_at: input.now,
+            expires_at: input.expiresAt,
+          })
+          .returning(),
+      );
+    },
+
+    async findByIdForUpdate(
+      uploadId: string,
+    ): Promise<FillxAvatarUpload | undefined> {
+      return first(
+        await db
+          .select()
+          .from(fillxAvatarUploads)
+          .where(eq(fillxAvatarUploads.id, uploadId))
+          .limit(1)
+          .for("update"),
+      );
+    },
+
+    async markFinalized(input: {
+      uploadId: string;
+      publicBucket: string;
+      publicKey: string;
+      now: Date;
+    }): Promise<FillxAvatarUpload | undefined> {
+      return first(
+        await db
+          .update(fillxAvatarUploads)
+          .set({
+            status: "finalized",
+            public_bucket: input.publicBucket,
+            public_key: input.publicKey,
+            finalized_at: input.now,
+          })
+          .where(
+            and(
+              eq(fillxAvatarUploads.id, input.uploadId),
+              eq(fillxAvatarUploads.status, "pending"),
+            ),
+          )
+          .returning(),
+      );
+    },
+
+    async markFailed(input: {
+      uploadId: string;
+      errorCode: string;
+    }): Promise<boolean> {
+      const updated = await db
+        .update(fillxAvatarUploads)
+        .set({
+          status: "failed",
+          error_code: input.errorCode,
+        })
+        .where(
+          and(
+            eq(fillxAvatarUploads.id, input.uploadId),
+            eq(fillxAvatarUploads.status, "pending"),
+          ),
+        )
+        .returning({ id: fillxAvatarUploads.id });
+      return updated.length > 0;
+    },
+
+    async markExpired(input: { uploadId: string }): Promise<boolean> {
+      const updated = await db
+        .update(fillxAvatarUploads)
+        .set({ status: "expired" })
+        .where(
+          and(
+            eq(fillxAvatarUploads.id, input.uploadId),
+            eq(fillxAvatarUploads.status, "pending"),
+          ),
+        )
+        .returning({ id: fillxAvatarUploads.id });
+      return updated.length > 0;
+    },
+  };
+}
+
 export async function getProfilesByWallets(
   db: DbLike,
   walletAddresses: string[],
@@ -687,6 +808,7 @@ export function createIdentityRepos(db: DbLike) {
     sessionFamilies: createSessionFamiliesRepo(db),
     walletSessions: createWalletSessionsRepo(db),
     walletSignInChallenges: createWalletSignInChallengesRepo(db),
+    avatarUploads: createAvatarUploadsRepo(db),
     orderlyAccounts: createOrderlyAccountsRepo(db),
   };
 }
