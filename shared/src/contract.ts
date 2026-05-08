@@ -261,7 +261,12 @@ export const contract = oc.router({
       )
       .output(CurrentUserResponse),
     updateDisplayName: oc
-      .input(z.object({ displayName: z.string().max(50) }))
+      .input(
+        z.object({
+          displayName: z.string().max(50).nullable().optional(),
+          avatarUrl: z.string().url().max(2048).nullable().optional(),
+        }),
+      )
       .output(z.object({ user: FillxUserProfile })),
   }),
   username: oc.router({

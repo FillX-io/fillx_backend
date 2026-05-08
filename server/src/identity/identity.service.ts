@@ -10,7 +10,8 @@ export type IdentityRepos = {
     createGeneratedUser?: (username: string) => Promise<FillxUser>;
     updateDisplayName: (input: {
       userId: string;
-      displayName: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
     }) => Promise<FillxUser>;
   };
   authIdentities?: {
@@ -94,13 +95,46 @@ export function createIdentityService(
 
     async updateDisplayName(input: {
       userId: string;
-      displayName: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
     }): Promise<FillxUser> {
-      const displayName = input.displayName.trim();
-      if (displayName.length === 0 || displayName.length > 50) {
+      const update: {
+        userId: string;
+        displayName?: string | null;
+        avatarUrl?: string | null;
+      } = { userId: input.userId };
+
+      if ("displayName" in input) {
+        const displayName = input.displayName?.trim() ?? "";
+        if (displayName.length > 50) {
+          throw new Error("INVALID_DISPLAY_NAME");
+        }
+        update.displayName = displayName.length > 0 ? displayName : null;
+      }
+
+      if ("avatarUrl" in input) {
+        const avatarUrl = input.avatarUrl?.trim() ?? "";
+        if (avatarUrl.length > 2048) {
+          throw new Error("INVALID_AVATAR_URL");
+        }
+        if (avatarUrl.length > 0) {
+          try {
+            const url = new URL(avatarUrl);
+            if (url.protocol !== "http:" && url.protocol !== "https:") {
+              throw new Error("INVALID_AVATAR_URL");
+            }
+          } catch {
+            throw new Error("INVALID_AVATAR_URL");
+          }
+        }
+        update.avatarUrl = avatarUrl.length > 0 ? avatarUrl : null;
+      }
+
+      if (!("displayName" in update) && !("avatarUrl" in update)) {
         throw new Error("INVALID_DISPLAY_NAME");
       }
-      return repos.users.updateDisplayName({ userId: input.userId, displayName });
+
+      return repos.users.updateDisplayName(update);
     },
   };
 }

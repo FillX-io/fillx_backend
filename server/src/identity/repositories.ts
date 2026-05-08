@@ -100,15 +100,29 @@ export function createUsersRepo(db: DbLike) {
 
     async updateDisplayName(input: {
       userId: string;
-      displayName: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
     }): Promise<FillxUser> {
+      const update: Partial<{
+        display_name: string | null;
+        avatar_url: string | null;
+        updated_at: Date;
+      }> = {
+        updated_at: new Date(),
+      };
+
+      if ("displayName" in input) {
+        update.display_name = input.displayName ?? null;
+      }
+
+      if ("avatarUrl" in input) {
+        update.avatar_url = input.avatarUrl ?? null;
+      }
+
       return firstOrThrow(
         await db
           .update(fillxUsers)
-          .set({
-            display_name: input.displayName,
-            updated_at: new Date(),
-          })
+          .set(update)
           .where(eq(fillxUsers.id, input.userId))
           .returning(),
       );

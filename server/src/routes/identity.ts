@@ -268,6 +268,7 @@ export const identityRoutes = {
           const updated = await service.updateDisplayName({
             userId: user.id,
             displayName: input.displayName,
+            avatarUrl: input.avatarUrl,
           });
           return { user: serializeUser(updated) };
         }),

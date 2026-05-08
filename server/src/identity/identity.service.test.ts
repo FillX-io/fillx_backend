@@ -124,3 +124,67 @@ test("getCurrentUser creates a generated user only for verified Privy auth", asy
     { userId: "user-created", privyUserId: "privy-user-2" },
   ]);
 });
+
+test("updateDisplayName trims and updates display name with avatar URL", async () => {
+  const updated = makeUser({
+    display_name: "FillX Trader",
+    avatar_url: "https://example.com/avatar.png",
+  });
+  const calls: Array<{
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }> = [];
+  const service = createIdentityService({
+    users: {
+      updateDisplayName: async (input) => {
+        calls.push(input);
+        return updated;
+      },
+    },
+  });
+
+  const result = await service.updateDisplayName({
+    userId: "user-1",
+    displayName: " FillX Trader ",
+    avatarUrl: " https://example.com/avatar.png ",
+  });
+
+  assert.equal(result, updated);
+  assert.deepEqual(calls, [
+    {
+      userId: "user-1",
+      displayName: "FillX Trader",
+      avatarUrl: "https://example.com/avatar.png",
+    },
+  ]);
+});
+
+test("updateDisplayName allows clearing avatar URL without changing display name", async () => {
+  const updated = makeUser({ avatar_url: null });
+  const calls: Array<{
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }> = [];
+  const service = createIdentityService({
+    users: {
+      updateDisplayName: async (input) => {
+        calls.push(input);
+        return updated;
+      },
+    },
+  });
+
+  await service.updateDisplayName({
+    userId: "user-1",
+    avatarUrl: null,
+  });
+
+  assert.deepEqual(calls, [
+    {
+      userId: "user-1",
+      avatarUrl: null,
+    },
+  ]);
+});
