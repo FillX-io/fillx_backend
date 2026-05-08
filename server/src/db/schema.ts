@@ -17,6 +17,11 @@ export type UsernameStatus = "generated" | "claimed";
 export type ChainType = "evm" | "solana";
 export type ClaimStatus = "accepted" | "rejected" | "expired";
 export type AuthProvider = "privy";
+export type AvatarUploadStatus =
+  | "pending"
+  | "finalized"
+  | "failed"
+  | "expired";
 
 export const ipConnectionLog = pgTable(
   "ip_connection_log",
@@ -51,7 +56,8 @@ export const fillxUsers = pgTable(
       .$type<UsernameStatus>()
       .notNull(),
     display_name: text("display_name"),
-    avatar_url: text("avatar_url"),
+    avatar_key: text("avatar_key"),
+    avatar_updated_at: timestamp("avatar_updated_at", { withTimezone: true }),
     nationality: text("nationality"),
     created_at: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -83,6 +89,47 @@ export const fillxUsers = pgTable(
     ),
   }),
 );
+
+export const fillxAvatarUploads = pgTable(
+  "fillx_avatar_uploads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => fillxUsers.id, { onDelete: "cascade" }),
+    incoming_bucket: text("incoming_bucket").notNull(),
+    incoming_key: text("incoming_key").notNull(),
+    source_content_type: text("source_content_type").notNull(),
+    source_content_length: integer("source_content_length").notNull(),
+    status: text("status").$type<AvatarUploadStatus>().notNull(),
+    public_bucket: text("public_bucket"),
+    public_key: text("public_key"),
+    error_code: text("error_code"),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+    finalized_at: timestamp("finalized_at", { withTimezone: true }),
+  },
+  (table) => ({
+    userStatusIdx: index("fillx_avatar_uploads_user_status_idx").on(
+      table.user_id,
+      table.status,
+    ),
+    expiryIdx: index("fillx_avatar_uploads_expiry_idx").on(table.expires_at),
+    statusCheck: check(
+      "fillx_avatar_uploads_status_check",
+      sql`${table.status} in ('pending', 'finalized', 'failed', 'expired')`,
+    ),
+    sourceContentLengthCheck: check(
+      "fillx_avatar_uploads_source_length_check",
+      sql`${table.source_content_length} > 0`,
+    ),
+  }),
+);
+
+export type FillxAvatarUpload = typeof fillxAvatarUploads.$inferSelect;
+export type NewFillxAvatarUpload = typeof fillxAvatarUploads.$inferInsert;
 
 export const userWallets = pgTable(
   "user_wallets",

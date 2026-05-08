@@ -29,6 +29,13 @@
       "when": 1778173565749,
       "tag": "0003_add_fillx_user_nationality",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778207673797,
+      "tag": "0004_add_s3_avatar_uploads",
+      "breakpoints": true
     }
   ]
 }
