@@ -5,6 +5,7 @@ import { z } from "zod";
 const JsonData = z.any();
 const ChainType = z.enum(["evm", "solana"]);
 const UsernameStatus = z.enum(["generated", "claimed"]);
+const AvatarUploadContentType = z.enum(["image/jpeg", "image/png", "image/webp"]);
 const FillxPrimaryWallet = z.object({
   chainType: ChainType,
   walletAddress: z.string(),
@@ -267,11 +268,29 @@ export const contract = oc.router({
       .input(
         z.object({
           displayName: z.string().max(50).nullable().optional(),
-          avatarUrl: z.string().url().max(2048).nullable().optional(),
           nationality: z.string().nullable().optional(),
         }),
       )
       .output(z.object({ user: FillxUserProfile })),
+    requestAvatarUpload: oc
+      .input(
+        z.object({
+          contentType: AvatarUploadContentType,
+          contentLength: z.number().int().positive().max(5 * 1024 * 1024),
+        }),
+      )
+      .output(
+        z.object({
+          uploadId: z.string(),
+          uploadUrl: z.string(),
+          fields: z.record(z.string()),
+          expiresAt: z.string(),
+        }),
+      ),
+    finalizeAvatarUpload: oc
+      .input(z.object({ uploadId: z.string() }))
+      .output(z.object({ user: FillxUserProfile })),
+    removeAvatar: oc.output(z.object({ user: FillxUserProfile })),
   }),
   username: oc.router({
     checkAvailable: oc

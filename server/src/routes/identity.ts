@@ -1,6 +1,13 @@
 import type { AppContext } from "../identity/context.js";
+import { processAvatarImage } from "../identity/avatar.processor.js";
+import {
+  createAvatarService,
+  type AvatarServiceRepos,
+} from "../identity/avatar.service.js";
+import { createAvatarStorage } from "../identity/avatar.storage.js";
 import { apiError } from "../identity/errors.js";
 import { createIdentityService } from "../identity/identity.service.js";
+import { serializeAvatarUrl } from "../identity/profile-serialization.js";
 import { normalizeProfileLookupWallets } from "../identity/profile-lookup.js";
 import { identityRateLimiter } from "../identity/rate-limit.js";
 import {
@@ -31,7 +38,7 @@ function serializeUser(user: {
   username: string;
   username_status: "generated" | "claimed";
   display_name: string | null;
-  avatar_url: string | null;
+  avatar_key: string | null;
   nationality: string | null;
   primaryWallet?: {
     chainType: "evm" | "solana";
@@ -44,7 +51,7 @@ function serializeUser(user: {
     username: user.username,
     usernameStatus: user.username_status,
     displayName: user.display_name,
-    avatarUrl: user.avatar_url,
+    avatarUrl: serializeAvatarUrl(user),
     nationality: user.nationality,
     hasClaimedUsername: user.username_status === "claimed",
     primaryWallet: user.primaryWallet ?? null,
@@ -186,6 +193,23 @@ function createWalletSessionServiceForContext(context: AppContext) {
   return createWalletSessionService(makeRepos(context.db));
 }
 
+function createAvatarServiceForContext(context: AppContext) {
+  const makeRepos = (db: AppContext["db"]): AvatarServiceRepos => {
+    const repos = createIdentityRepos(db);
+    return {
+      users: repos.users,
+      avatarUploads: repos.avatarUploads,
+      runTransaction: <T>(fn: (repos: AvatarServiceRepos) => Promise<T>) =>
+        context.db.transaction(async (tx) =>
+          fn(makeRepos(tx as unknown as AppContext["db"])),
+        ),
+    };
+  };
+
+  const storage = createAvatarStorage();
+  return createAvatarService(makeRepos(context.db), storage, processAvatarImage);
+}
+
 export const identityRoutes = {
   identity: {
     getCurrentUser: pub.identity.getCurrentUser.handler(
@@ -272,11 +296,43 @@ export const identityRoutes = {
           const updated = await service.updateProfile({
             userId: user.id,
             displayName: input.displayName,
-            avatarUrl: input.avatarUrl,
             nationality: input.nationality,
           });
           return { user: serializeUser(updated) };
         }),
+    ),
+
+    requestAvatarUpload: pub.identity.requestAvatarUpload.handler(
+      async ({ input, context }) =>
+        protectedProcedure(context, async ({ user }) =>
+          createAvatarServiceForContext(context).requestAvatarUpload({
+            userId: user.id,
+            contentType: input.contentType,
+            contentLength: input.contentLength,
+          }),
+        ),
+    ),
+
+    finalizeAvatarUpload: pub.identity.finalizeAvatarUpload.handler(
+      async ({ input, context }) =>
+        protectedProcedure(context, async ({ user }) => {
+          const updated = await createAvatarServiceForContext(
+            context,
+          ).finalizeAvatarUpload({
+            userId: user.id,
+            uploadId: input.uploadId,
+          });
+          return { user: serializeUser(updated) };
+        }),
+    ),
+
+    removeAvatar: pub.identity.removeAvatar.handler(async ({ context }) =>
+      protectedProcedure(context, async ({ user }) => {
+        const updated = await createAvatarServiceForContext(context).removeAvatar({
+          userId: user.id,
+        });
+        return { user: serializeUser(updated) };
+      }),
     ),
   },
 

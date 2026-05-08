@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "check": "tsc --noEmit"
+    "check": "yarn workspace @fillx/shared run build && tsc --noEmit"
   },
   "dependencies": {
     "@fillx/shared": "0.1.0",

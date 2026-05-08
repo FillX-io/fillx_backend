@@ -25,6 +25,7 @@ import {
   type UsernameClaimChallenge,
   type UsernameStatus,
 } from "../db/schema.js";
+import { serializeAvatarUrl } from "./profile-serialization.js";
 
 type DbLike = Pick<Db, "select" | "insert" | "update">;
 
@@ -784,7 +785,7 @@ export async function getProfilesByWallets(
       username: fillxUsers.username,
       usernameStatus: fillxUsers.username_status,
       displayName: fillxUsers.display_name,
-      avatarUrl: fillxUsers.avatar_url,
+      avatarKey: fillxUsers.avatar_key,
       nationality: fillxUsers.nationality,
     })
     .from(userWallets)
@@ -796,7 +797,15 @@ export async function getProfilesByWallets(
       ),
     );
 
-  return rows;
+  return rows.map((row) => ({
+    walletAddress: row.walletAddress,
+    userId: row.userId,
+    username: row.username,
+    usernameStatus: row.usernameStatus,
+    displayName: row.displayName,
+    avatarUrl: serializeAvatarUrl({ avatar_key: row.avatarKey }),
+    nationality: row.nationality,
+  }));
 }
 
 export function createIdentityRepos(db: DbLike) {

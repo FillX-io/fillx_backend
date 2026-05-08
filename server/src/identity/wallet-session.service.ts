@@ -14,6 +14,7 @@ import {
 } from "./session.js";
 import { normalizeWalletAddress, verifyWalletSignature } from "./wallet.js";
 import { buildWalletSessionMessage } from "./wallet-session-message.js";
+import { serializeAvatarUrl } from "./profile-serialization.js";
 
 const WALLET_SESSION_TTL_MS = DEFAULT_SESSION_MAX_AGE_SECONDS * 1000;
 
@@ -206,6 +207,7 @@ export function createWalletSessionService(
     createToken?: () => string;
     hashToken?: (token: string) => string;
     verifySignature?: typeof verifyWalletSignature;
+    avatarPublicBaseUrl?: string;
   } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -213,6 +215,8 @@ export function createWalletSessionService(
   const createToken = options.createToken ?? createOpaqueSessionToken;
   const hashToken = options.hashToken ?? hashOpaqueSessionToken;
   const verifySignature = options.verifySignature ?? verifyWalletSignature;
+  const avatarPublicBaseUrl =
+    options.avatarPublicBaseUrl ?? process.env.AVATAR_PUBLIC_BASE_URL ?? "";
 
   function expiryFrom(proofTime: Date): Date {
     return new Date(proofTime.getTime() + WALLET_SESSION_TTL_MS);
@@ -246,7 +250,7 @@ export function createWalletSessionService(
       username: user.username,
       usernameStatus: user.username_status,
       displayName: user.display_name,
-      avatarUrl: user.avatar_url,
+      avatarUrl: serializeAvatarUrl(user, avatarPublicBaseUrl),
       nationality: user.nationality,
       primaryWallet: {
         chainType: wallet.chain_type,

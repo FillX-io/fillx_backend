@@ -352,13 +352,20 @@ test("resolveCurrentUser never returns wallet A for wallet B selector", async ()
 
 test("resolveCurrentUser returns public profile requiring signature when wallet is claimed but not remembered", async () => {
   const { repos, users, wallets, families } = makeRepos();
-  users.set("user-1", makeUser({ username: "alice" }));
+  users.set(
+    "user-1",
+    makeUser({
+      username: "alice",
+      avatar_key: "avatars/public/user-1/avatar-1.webp",
+    }),
+  );
   wallets.push(makeWallet());
   const tokenHash = "token-hash";
   families.set(tokenHash, makeFamily({ token_hash: tokenHash }));
   const service = createWalletSessionService(repos, {
     now: () => NOW,
     hashToken: () => tokenHash,
+    avatarPublicBaseUrl: "https://cdn.example.test",
   });
 
   const current = await service.resolveCurrentUser({
@@ -376,7 +383,7 @@ test("resolveCurrentUser returns public profile requiring signature when wallet 
       username: "alice",
       usernameStatus: "claimed",
       displayName: null,
-      avatarUrl: undefined,
+      avatarUrl: "https://cdn.example.test/avatars/public/user-1/avatar-1.webp",
       nationality: null,
       primaryWallet: {
         chainType: "evm",
