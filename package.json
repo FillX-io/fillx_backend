@@ -13,6 +13,9 @@
     "fmt": "oxlint --fix shared/ server/ client/",
     "check": "yarn workspace @fillx/shared run check && yarn workspace @fillx/server run check && yarn workspace @fillx/client run check && yarn check:e2e",
     "check:e2e": "tsc --noEmit -p e2e/tsconfig.json",
+    "e2e:minio:up": "docker compose -f docker-compose.e2e.yml up -d",
+    "e2e:minio:down": "docker compose -f docker-compose.e2e.yml down",
+    "e2e:minio:logs": "docker compose -f docker-compose.e2e.yml logs -f minio",
     "test:e2e": "yarn workspace @fillx/server test:e2e"
   },
   "devDependencies": {

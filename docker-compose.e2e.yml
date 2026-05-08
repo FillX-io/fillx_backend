@@ -1,0 +1,31 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    env_file:
+      - ./.env.e2e
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-e2e-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    env_file:
+      - ./.env.e2e
+    entrypoint: >
+      /bin/sh -c '
+      set -eu;
+      until mc alias set fillx http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+        sleep 1;
+      done;
+      mc mb --ignore-existing "fillx/$$AVATAR_S3_INCOMING_BUCKET";
+      mc mb --ignore-existing "fillx/$$AVATAR_S3_PUBLIC_BUCKET";
+      mc anonymous set download "fillx/$$AVATAR_S3_PUBLIC_BUCKET";
+      '
+
+volumes:
+  minio-e2e-data:

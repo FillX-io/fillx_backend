@@ -1,4 +1,7 @@
 import type { TestContext } from "node:test";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createDatabase,
   databaseUrlFromAdmin,
@@ -12,33 +15,72 @@ import { CookieJar } from "./session.js";
 import { startTestServer } from "./server.js";
 import { createTestPrivy } from "./privy.js";
 
+const e2eEnvPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../.env.e2e",
+);
+
+const e2eEnvKeys = [
+  "E2E_DATABASE_ADMIN_URL",
+  "MINIO_ROOT_USER",
+  "MINIO_ROOT_PASSWORD",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AVATAR_S3_ENDPOINT",
+  "AVATAR_S3_FORCE_PATH_STYLE",
+  "AVATAR_S3_REGION",
+  "AVATAR_S3_INCOMING_BUCKET",
+  "AVATAR_S3_PUBLIC_BUCKET",
+  "AVATAR_PUBLIC_BASE_URL",
+] as const;
+
+const e2eEnvKeySet = new Set<string>(e2eEnvKeys);
+
+const runtimeEnvKeys = [
+  "DATABASE_URL",
+  "FILLX_JWT_SECRET",
+  "PRIVY_APP_ID",
+  "PRIVY_JWT_VERIFICATION_KEY",
+  "NODE_ENV",
+] as const;
+
+const managedEnvKeys = [...runtimeEnvKeys, ...e2eEnvKeys] as const;
+
+function snapshotEnv(): Map<string, string | undefined> {
+  return new Map(managedEnvKeys.map((key) => [key, process.env[key]]));
+}
+
+function restoreEnv(previousEnv: Map<string, string | undefined>): void {
+  for (const [key, value] of previousEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+function loadE2EEnv(): void {
+  if (!existsSync(e2eEnvPath)) return;
+
+  for (const line of readFileSync(e2eEnvPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex === -1) continue;
+
+    const key = trimmed.slice(0, separatorIndex);
+    if (!e2eEnvKeySet.has(key)) continue;
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = trimmed.slice(separatorIndex + 1);
+  }
+}
+
+loadE2EEnv();
+
 export async function setupE2E(t: TestContext) {
+  const previousEnv = snapshotEnv();
   const adminUrl = requireAdminUrl();
   const databaseName = makeDatabaseName(t.name);
   const databaseUrl = databaseUrlFromAdmin(adminUrl, databaseName);
-  const previousEnv = {
-    databaseUrl: process.env.DATABASE_URL,
-    fillxJwtSecret: process.env.FILLX_JWT_SECRET,
-    privyAppId: process.env.PRIVY_APP_ID,
-    privyJwtVerificationKey: process.env.PRIVY_JWT_VERIFICATION_KEY,
-    nodeEnv: process.env.NODE_ENV,
-  };
-
-  function restoreEnv(): void {
-    if (previousEnv.databaseUrl === undefined) delete process.env.DATABASE_URL;
-    else process.env.DATABASE_URL = previousEnv.databaseUrl;
-    if (previousEnv.fillxJwtSecret === undefined) delete process.env.FILLX_JWT_SECRET;
-    else process.env.FILLX_JWT_SECRET = previousEnv.fillxJwtSecret;
-    if (previousEnv.privyAppId === undefined) delete process.env.PRIVY_APP_ID;
-    else process.env.PRIVY_APP_ID = previousEnv.privyAppId;
-    if (previousEnv.privyJwtVerificationKey === undefined) {
-      delete process.env.PRIVY_JWT_VERIFICATION_KEY;
-    } else {
-      process.env.PRIVY_JWT_VERIFICATION_KEY = previousEnv.privyJwtVerificationKey;
-    }
-    if (previousEnv.nodeEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = previousEnv.nodeEnv;
-  }
 
   await createDatabase(databaseName);
 
@@ -59,18 +101,18 @@ export async function setupE2E(t: TestContext) {
       }
     }
 
-    try {
-      restoreEnv();
-    } catch (error) {
-      errors.push(error);
-    }
-
     if (input.drop) {
       try {
         await dropDatabase(databaseName);
       } catch (error) {
         errors.push(error);
       }
+    }
+
+    try {
+      restoreEnv(previousEnv);
+    } catch (error) {
+      errors.push(error);
     }
 
     if (errors.length === 1) throw errors[0];
