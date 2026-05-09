@@ -57,10 +57,7 @@ function normalizeNationality(input: string | null): string | null {
   return trimmed.toUpperCase();
 }
 
-export function createIdentityService(
-  repos: IdentityRepos,
-  options: { randomInt?: () => number } = {},
-) {
+export function createIdentityService(repos: IdentityRepos) {
   const guestResponse: CurrentUserResult = {
     user: null,
     guest: { isGuest: true },

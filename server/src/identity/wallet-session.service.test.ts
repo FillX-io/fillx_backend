@@ -122,6 +122,8 @@ function makeRepos(): {
             wallet.chain_type === chainType &&
             wallet.wallet_address === walletAddress,
         ),
+      findPrimaryByUserId: async (userId) =>
+        wallets.find((wallet) => wallet.user_id === userId && wallet.is_primary),
     },
     sessionFamilies: {
       findActiveByTokenHash: async ({ tokenHash, now }) => {
@@ -380,6 +382,52 @@ test("resolveCurrentUser returns public profile requiring signature when wallet 
       userId: "user-1",
       displayName: null,
       avatarUrl: "https://cdn.example.test/avatars/public/user-1/avatar-1.webp",
+      nationality: null,
+      primaryWallet: {
+        chainType: "evm",
+        walletAddress: EVM_ADDRESS,
+        walletKey: `evm:${EVM_ADDRESS}`,
+      },
+    },
+  });
+});
+
+test("resolveCurrentUser returns the user's primary wallet in public profile for a non-primary selector", async () => {
+  const { repos, users, wallets, families } = makeRepos();
+  users.set("user-1", makeUser({ id: "user-1" }));
+  wallets.push(
+    makeWallet({
+      id: "wallet-primary",
+      wallet_address: EVM_ADDRESS,
+      is_primary: true,
+    }),
+    makeWallet({
+      id: "wallet-secondary",
+      wallet_address: SECOND_EVM_ADDRESS,
+      is_primary: false,
+    }),
+  );
+  const tokenHash = "token-hash";
+  families.set(tokenHash, makeFamily({ token_hash: tokenHash }));
+  const service = createWalletSessionService(repos, {
+    now: () => NOW,
+    hashToken: () => tokenHash,
+  });
+
+  const current = await service.resolveCurrentUser({
+    sessionToken: "token",
+    activeWalletKey: `evm:${SECOND_EVM_ADDRESS}`,
+  });
+
+  assert.deepEqual(current, {
+    state: "public_profile_requires_signature",
+    walletKey: `evm:${SECOND_EVM_ADDRESS}`,
+    user: null,
+    guest: null,
+    profile: {
+      userId: "user-1",
+      displayName: null,
+      avatarUrl: null,
       nationality: null,
       primaryWallet: {
         chainType: "evm",

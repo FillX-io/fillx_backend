@@ -76,6 +76,7 @@ export type WalletSessionServiceRepos = {
       chainType: ChainType;
       walletAddress: string;
     }) => Promise<UserWallet | undefined>;
+    findPrimaryByUserId: (userId: string) => Promise<UserWallet | undefined>;
   };
   sessionFamilies: {
     findActiveByTokenHash: (input: {
@@ -243,17 +244,19 @@ export function createWalletSessionService(
     if (!wallet) return null;
     const user = await repos.users.findById(wallet.user_id);
     if (!user) return null;
+    const primaryWallet = await repos.wallets.findPrimaryByUserId(user.id);
+    if (!primaryWallet) return null;
     return {
       userId: user.id,
       displayName: user.display_name,
       avatarUrl: serializeAvatarUrl(user, avatarPublicBaseUrl),
       nationality: user.nationality,
       primaryWallet: {
-        chainType: wallet.chain_type,
-        walletAddress: wallet.wallet_address,
+        chainType: primaryWallet.chain_type,
+        walletAddress: primaryWallet.wallet_address,
         walletKey: fillxWalletKeyFromParts({
-          chainType: wallet.chain_type,
-          walletAddress: wallet.wallet_address,
+          chainType: primaryWallet.chain_type,
+          walletAddress: primaryWallet.wallet_address,
         }),
       },
     };
