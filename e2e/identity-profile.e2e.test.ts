@@ -117,7 +117,8 @@ test("public wallet lookup returns display metadata and no removed identity fiel
     nationality: "US",
   });
 
-  const profile = await client.profile.getByWallets({
+  const { client: publicClient } = createClient({ baseUrl });
+  const profile = await publicClient.profile.getByWallets({
     walletAddresses: [evmWallet.address],
   });
   assert.equal(profile.profiles.length, 1);
