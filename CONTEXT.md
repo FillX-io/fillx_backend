@@ -1,24 +1,18 @@
 # FillX Identity Context
 
-FillX Identity describes how users, usernames, wallets, and authentication identities relate to public trading profiles. It exists to keep wallet ownership, profile lookup, and account authentication language precise.
+FillX Identity describes how users, wallets, display metadata, and authentication identities relate to public trading profiles. It exists to keep wallet ownership, profile lookup, and account authentication language precise.
+
+FillX profile identity is anchored by verified wallets. A profile may have editable display metadata such as display name, avatar, and nationality, but display name is nullable and not unique. Public UI should render `displayName || shortened primary wallet address`.
 
 ## Language
 
 **User Profile**:
-A FillX identity record that owns a username, display metadata, and any verified wallet bindings.
+A FillX identity record that owns display metadata and any verified wallet bindings.
 _Avoid_: account, auth user
 
-**Generated Username**:
-A provisional username assigned before a user claims a custom username.
-_Avoid_: default username, random username
-
-**Claimed Username**:
-A custom username bound to a user profile after a wallet signature challenge succeeds.
-_Avoid_: handle, nickname
-
-**Username Owner**:
-The explicit identity type that owns a claimed username.
-_Avoid_: implicit login path, current connector
+**Display Metadata**:
+Editable public profile fields such as display name, avatar, and nationality. Display name is nullable and not unique.
+_Avoid_: identity proof, unique handle
 
 **Wallet Binding**:
 A verified relationship between a user profile and a wallet address for a specific chain.
@@ -44,6 +38,10 @@ _Avoid_: wallet address, connected wallet
 A user identity established from verified control of a wallet address on a specific chain.
 _Avoid_: anonymous user, connected wallet
 
+**Primary Wallet**:
+The verified wallet binding used as the stable public fallback for a profile when display name is absent.
+_Avoid_: display name, lookup hint
+
 **Privy Identity**:
 A verified Privy DID from a valid Privy access token.
 _Avoid_: wallet, profile
@@ -66,40 +64,38 @@ _Avoid_: wallet, wallet binding
 
 ## Relationships
 
-- A **User Profile** has exactly one username, either a **Generated Username** or a **Claimed Username**.
-- A **Claimed Username** has exactly one explicit **Username Owner**.
-- FillX v1 usernames are wallet-owned: a **Claimed Username** requires **Wallet Proof** from the owning wallet.
+- A **User Profile** is anchored by verified wallet bindings and may have nullable, non-unique **Display Metadata**.
+- Public UI identifies a profile with display name when present, otherwise with a shortened **Primary Wallet** address.
 - A **Wallet Binding** requires a **Wallet Proof** or trusted wallet ownership data from an authentication provider.
 - A **Wallet Lookup Hint** does not create a **Wallet Binding**.
 - A **Wallet Lookup Hint** must not determine the **Current User**.
 - An anonymous visitor receives a **Guest Response**, not a permanent **User Profile**.
-- A **Guest Response** cannot own usernames, bind wallets, link Orderly accounts, or upgrade without a verified authentication flow.
+- A **Guest Response** cannot bind wallets, link Orderly accounts, or upgrade without a verified authentication flow.
 - A wallet-only user becomes a **Wallet Identity** after **Wallet Proof**, not merely after connecting a wallet in the browser.
-- A username claim targets a server-verified identity, either a **Current User** or a **Wallet Identity**, not a user ID supplied by the client.
 - A **Privy Identity** can authenticate a request without proving control of any **Wallet Binding**.
 - A **Privy Identity** must not be linked to a wallet-backed **User Profile** from a request-supplied **Wallet Lookup Hint** alone.
 - A **FillX Session** proves the request is authenticated as a FillX user profile, but it is not **Wallet Proof**.
 - A **FillX Session** can be issued after wallet proof or verified provider authentication resolves a user profile.
 - An **Orderly Account** can be associated with a **User Profile** for trading metadata, but it is not a **Wallet Binding**.
-- An **Orderly Subaccount** is subordinate to an **Orderly Account** and must not be treated as a wallet address or username owner.
+- An **Orderly Subaccount** is subordinate to an **Orderly Account** and must not be treated as a wallet address or profile identity.
 - Every privileged identity mutation must declare the accepted **Proof Type**; no other proof type may silently satisfy it.
 
 ## Example Dialogue
 
-> **Dev:** "A Privy user sent a wallet address that already has a claimed username. Should we link the Privy DID to that profile?"
+> **Dev:** "A Privy user sent a wallet address that already has a profile. Should we link the Privy DID to that profile?"
 > **Domain expert:** "No. A request-supplied wallet address is only a Wallet Lookup Hint. It cannot determine the Current User or create a link."
 
-> **Dev:** "This Orderly subaccount ID looks like a hex address. Can it claim or own a username?"
-> **Domain expert:** "No. It is an Orderly Subaccount, not a wallet address. Username ownership still requires Wallet Proof from the wallet."
+> **Dev:** "This Orderly subaccount ID looks like a hex address. Can it identify a profile?"
+> **Domain expert:** "No. It is an Orderly Subaccount, not a wallet address. Profile identity is anchored by verified wallet bindings."
 
 > **Dev:** "A MetaMask or Phantom user is not logged in with Privy. Are they anonymous?"
-> **Domain expert:** "Not after they sign the username challenge. The signature establishes a Wallet Identity for that action."
+> **Domain expert:** "Not after they sign the wallet challenge. The signature establishes a Wallet Identity for that action."
 
 > **Dev:** "Can a FillX JWT replace wallet signature for a new wallet-bound action?"
 > **Domain expert:** "No. A FillX Session authenticates the user profile, but fresh Wallet Proof is still required for wallet-bound actions."
 
-> **Dev:** "Can a username be owned sometimes by a FillX user and sometimes by a wallet depending on the login path?"
-> **Domain expert:** "No. In v1 a Claimed Username is wallet-owned. Other identities may authenticate the user profile, but wallet ownership is still explicit."
+> **Dev:** "Can display name prove that two requests belong to the same FillX user?"
+> **Domain expert:** "No. Display name is nullable and not unique. Verified wallet bindings anchor profile identity."
 
 > **Dev:** "Should calling getCurrentUser create a User Profile for an anonymous visitor?"
 > **Domain expert:** "No. Anonymous visitors receive a Guest Response. A permanent User Profile is created only after verified auth such as Wallet Proof or Privy authentication."
@@ -108,11 +104,10 @@ _Avoid_: wallet, wallet binding
 
 - "wallet address" was used to mean both **Wallet Lookup Hint** and **Wallet Proof**. Resolved: an address by itself is only a lookup hint; proof requires a fresh signature or trusted provider ownership data.
 - "Privy user with wallet" was used to imply wallet ownership. Resolved: a **Privy Identity** proves authentication, not wallet control, unless trusted wallet ownership data is verified.
-- "account" was used for both **User Profile** and **Orderly Account**. Resolved: Orderly accounts are trading identifiers and do not own usernames.
+- "account" was used for both **User Profile** and **Orderly Account**. Resolved: Orderly accounts are trading identifiers and do not anchor profile identity.
 - `identity.getCurrentUser` was used for both current-user authentication and wallet-profile resolution. Resolved: **Current User** means the authenticated profile for the request; public wallet profile lookup belongs in profile routes.
 - `identity.getCurrentUser` accepted wallet parameters. Resolved: current-user APIs must not accept wallet lookup hints; wallet profile lookup belongs in profile routes.
 - Anonymous current-user behavior was ambiguous. Resolved: anonymous visitors receive a non-persistent **Guest Response** and must not create permanent `fillx_users`.
-- Username claim APIs accepted `userId`. Resolved: claim APIs must derive the target profile from server-verified identity and must not trust client-supplied user IDs.
 - "session" was used loosely across Privy, wallet, and FillX concepts. Resolved: **FillX Session** means a FillX-issued JWT for current-user authentication and is separate from **Wallet Proof** and **Privy Identity**.
 - FillX JWT transport was ambiguous between bearer token and cookie. Resolved: browser-facing FillX sessions use the HTTP-only `fillx-session` cookie.
-- Username ownership was ambiguous between account-owned, wallet-owned, and hybrid. Resolved: FillX v1 claimed usernames are wallet-owned; future hybrid ownership must add an explicit owner type instead of inferring from login path.
+- Public identity was ambiguous between display metadata, trading accounts, and wallet bindings. Resolved: FillX profile identity is anchored by verified wallets; display metadata does not prove identity.
