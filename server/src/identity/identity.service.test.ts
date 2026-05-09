@@ -116,7 +116,7 @@ test("getCurrentUser creates a user only for verified Privy auth", async () => {
   ]);
 });
 
-test("createUserFromWalletProof creates a profile without username generation", async () => {
+test("createUserFromWalletProof creates a profile without generated identity data", async () => {
   const created = makeUser({ id: "wallet-user" });
   const calls: string[] = [];
   const service = createIdentityService({
