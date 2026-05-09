@@ -6,9 +6,6 @@ function makeUser(input: Partial<FillxUser> = {}): FillxUser {
   const now = new Date("2026-05-07T00:00:00.000Z");
   return {
     id: input.id === undefined ? "user-1" : input.id,
-    username: input.username === undefined ? "trader_0001" : input.username,
-    username_status:
-      input.username_status === undefined ? "generated" : input.username_status,
     display_name: input.display_name === undefined ? null : input.display_name,
     avatar_key: input.avatar_key === undefined ? null : input.avatar_key,
     avatar_updated_at:
@@ -24,8 +21,7 @@ test("getCurrentUser returns a guest response without creating a user for anonym
   const service = createIdentityService({
     users: {
       findById: async () => undefined,
-      findByUsername: async () => undefined,
-      createGeneratedUser: async () => {
+      createUser: async () => {
         createCount += 1;
         return makeUser();
       },
@@ -42,12 +38,11 @@ test("getCurrentUser returns a guest response without creating a user for anonym
 });
 
 test("getCurrentUser returns an existing FillX session user", async () => {
-  const existing = makeUser({ id: "user-session", username: "alice" });
+  const existing = makeUser({ id: "user-session" });
   const service = createIdentityService({
     users: {
       findById: async (id) => (id === existing.id ? existing : undefined),
-      findByUsername: async () => undefined,
-      createGeneratedUser: async () => {
+      createUser: async () => {
         throw new Error("should not create user");
       },
       updateProfile: async () => {
@@ -64,12 +59,11 @@ test("getCurrentUser returns an existing FillX session user", async () => {
 });
 
 test("getCurrentUser returns an existing Privy-linked user", async () => {
-  const existing = makeUser({ id: "user-existing", username: "alice" });
+  const existing = makeUser({ id: "user-existing" });
   const service = createIdentityService({
     users: {
       findById: async (id) => (id === existing.id ? existing : undefined),
-      findByUsername: async () => undefined,
-      createGeneratedUser: async () => {
+      createUser: async () => {
         throw new Error("should not create user");
       },
       updateProfile: async () => {
@@ -91,42 +85,57 @@ test("getCurrentUser returns an existing Privy-linked user", async () => {
   assert.deepEqual(result, { user: existing, guest: null });
 });
 
-test("getCurrentUser creates a generated user only for verified Privy auth", async () => {
+test("getCurrentUser creates a user only for verified Privy auth", async () => {
   const linked: Array<{ userId: string; privyUserId: string }> = [];
-  const created = makeUser({ id: "user-created", username: "trader_002a" });
-  const service = createIdentityService(
-    {
-      users: {
-        findById: async () => undefined,
-        findByUsername: async () => undefined,
-        createGeneratedUser: async (username) => ({
-          ...created,
-          username,
-        }),
-        updateProfile: async () => {
-          throw new Error("should not update user");
-        },
-      },
-      authIdentities: {
-        findByProviderUserId: async () => undefined,
-        linkPrivyIdentity: async (input) => {
-          linked.push(input);
-          return {};
-        },
+  const created = makeUser({ id: "user-created" });
+  const service = createIdentityService({
+    users: {
+      findById: async () => undefined,
+      createUser: async () => created,
+      updateProfile: async () => {
+        throw new Error("should not update user");
       },
     },
-    { randomInt: () => 42 },
-  );
+    authIdentities: {
+      findByProviderUserId: async () => undefined,
+      linkPrivyIdentity: async (input) => {
+        linked.push(input);
+        return {};
+      },
+    },
+  });
 
   const result = await service.getCurrentUser({
     auth: { type: "privy", privyUserId: "privy-user-2" },
   });
 
-  assert.equal(result.user?.username, "trader_002a");
+  assert.equal(result.user?.id, "user-created");
   assert.equal(result.guest, null);
   assert.deepEqual(linked, [
     { userId: "user-created", privyUserId: "privy-user-2" },
   ]);
+});
+
+test("createUserFromWalletProof creates a profile without username generation", async () => {
+  const created = makeUser({ id: "wallet-user" });
+  const calls: string[] = [];
+  const service = createIdentityService({
+    users: {
+      findById: async () => undefined,
+      createUser: async () => {
+        calls.push("createUser");
+        return created;
+      },
+      updateProfile: async () => {
+        throw new Error("should not update user");
+      },
+    },
+  });
+
+  const result = await service.createUserFromWalletProof();
+
+  assert.equal(result.id, "wallet-user");
+  assert.deepEqual(calls, ["createUser"]);
 });
 
 function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
@@ -140,8 +149,7 @@ function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
   const service = createIdentityService({
     users: {
       findById: async (id) => (id === stored.id ? stored : undefined),
-      findByUsername: async () => undefined,
-      createGeneratedUser: async () => {
+      createUser: async () => {
         throw new Error("should not create user");
       },
       updateProfile: async (input) => {

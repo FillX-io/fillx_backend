@@ -1,13 +1,11 @@
 import type { FillxUser } from "../db/schema.js";
-import { generateUsernameCandidate } from "./username.rules.js";
 
 export type { FillxUser } from "../db/schema.js";
 
 export type IdentityRepos = {
   users: {
     findById?: (id: string) => Promise<FillxUser | undefined>;
-    findByUsername?: (username: string) => Promise<FillxUser | undefined>;
-    createGeneratedUser?: (username: string) => Promise<FillxUser>;
+    createUser?: () => Promise<FillxUser>;
     updateProfile: (input: {
       userId: string;
       displayName?: string | null;
@@ -68,23 +66,17 @@ export function createIdentityService(
     guest: { isGuest: true },
   };
 
-  async function createGeneratedUser(): Promise<FillxUser> {
-    if (!repos.users.createGeneratedUser || !repos.users.findByUsername) {
+  async function createUser(): Promise<FillxUser> {
+    if (!repos.users.createUser) {
       throw new Error("IDENTITY_REPO_INCOMPLETE");
     }
 
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      const candidate = generateUsernameCandidate(options.randomInt);
-      const existing = await repos.users.findByUsername(candidate);
-      if (!existing) return repos.users.createGeneratedUser(candidate);
-    }
-
-    throw new Error("GENERATED_USERNAME_COLLISION");
+    return repos.users.createUser();
   }
 
   return {
     async createUserFromWalletProof(): Promise<FillxUser> {
-      return createGeneratedUser();
+      return createUser();
     },
 
     async getCurrentUser(input: {
@@ -112,7 +104,7 @@ export function createIdentityService(
         if (existing) return { user: existing, guest: null };
       }
 
-      const created = await createGeneratedUser();
+      const created = await createUser();
       await repos.authIdentities.linkPrivyIdentity({
         userId: created.id,
         privyUserId: input.auth.privyUserId,

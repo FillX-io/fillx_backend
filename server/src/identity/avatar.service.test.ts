@@ -9,9 +9,6 @@ const EXPIRES = new Date("2026-05-08T12:10:00.000Z");
 function makeUser(input: Partial<FillxUser> = {}): FillxUser {
   return {
     id: input.id === undefined ? "user-1" : input.id,
-    username: input.username === undefined ? "alice" : input.username,
-    username_status:
-      input.username_status === undefined ? "claimed" : input.username_status,
     display_name: input.display_name === undefined ? null : input.display_name,
     avatar_key: input.avatar_key === undefined ? null : input.avatar_key,
     avatar_updated_at:

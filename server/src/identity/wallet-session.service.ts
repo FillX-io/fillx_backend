@@ -26,8 +26,6 @@ export type FillxPrimaryWalletProfile = {
 
 export type FillxPublicProfile = {
   userId: string;
-  username: string;
-  usernameStatus: "generated" | "claimed";
   displayName: string | null;
   avatarUrl: string | null;
   nationality: string | null;
@@ -247,8 +245,6 @@ export function createWalletSessionService(
     if (!user) return null;
     return {
       userId: user.id,
-      username: user.username,
-      usernameStatus: user.username_status,
       displayName: user.display_name,
       avatarUrl: serializeAvatarUrl(user, avatarPublicBaseUrl),
       nationality: user.nationality,

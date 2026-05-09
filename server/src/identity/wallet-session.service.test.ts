@@ -22,8 +22,6 @@ const SECOND_EVM_ADDRESS = "0x0000000000000000000000000000000000000002";
 function makeUser(input: Partial<FillxUser> = {}): FillxUser {
   return {
     id: input.id ?? "user-1",
-    username: input.username ?? "alice",
-    username_status: input.username_status ?? "claimed",
     display_name: input.display_name ?? null,
     avatar_key: input.avatar_key === undefined ? null : input.avatar_key,
     avatar_updated_at:
@@ -317,8 +315,8 @@ test("resolveCurrentUser returns no active wallet without a selector", async () 
 
 test("resolveCurrentUser never returns wallet A for wallet B selector", async () => {
   const { repos, users, families, walletSessions } = makeRepos();
-  users.set("user-1", makeUser({ username: "alice" }));
-  users.set("user-2", makeUser({ id: "user-2", username: "bob" }));
+  users.set("user-1", makeUser({ id: "user-1" }));
+  users.set("user-2", makeUser({ id: "user-2" }));
   const tokenHash = "token-hash";
   families.set(tokenHash, makeFamily({ token_hash: tokenHash }));
   walletSessions.push(
@@ -347,7 +345,7 @@ test("resolveCurrentUser never returns wallet A for wallet B selector", async ()
 
   assert.equal(current.state, "authenticated");
   assert.equal(current.walletKey, `evm:${SECOND_EVM_ADDRESS}`);
-  assert.equal(current.user?.username, "bob");
+  assert.equal(current.user?.id, "user-2");
 });
 
 test("resolveCurrentUser returns public profile requiring signature when wallet is claimed but not remembered", async () => {
@@ -355,7 +353,7 @@ test("resolveCurrentUser returns public profile requiring signature when wallet 
   users.set(
     "user-1",
     makeUser({
-      username: "alice",
+      id: "user-1",
       avatar_key: "avatars/public/user-1/avatar-1.webp",
     }),
   );
@@ -380,8 +378,6 @@ test("resolveCurrentUser returns public profile requiring signature when wallet 
     guest: null,
     profile: {
       userId: "user-1",
-      username: "alice",
-      usernameStatus: "claimed",
       displayName: null,
       avatarUrl: "https://cdn.example.test/avatars/public/user-1/avatar-1.webp",
       nationality: null,
@@ -396,7 +392,7 @@ test("resolveCurrentUser returns public profile requiring signature when wallet 
 
 test("resolveCurrentUser ignores expired and revoked wallet sessions", async () => {
   const { repos, users, wallets, families, walletSessions } = makeRepos();
-  users.set("user-1", makeUser({ username: "alice" }));
+  users.set("user-1", makeUser({ id: "user-1" }));
   wallets.push(makeWallet());
   const tokenHash = "token-hash";
   families.set(tokenHash, makeFamily({ token_hash: tokenHash }));
@@ -458,7 +454,7 @@ test("requestWalletSessionChallenge returns a standards-shaped sign-in message",
 
 test("createWalletSession consumes a valid challenge and returns a rotated opaque token", async () => {
   const { repos, users, wallets, challenges, createdTokens } = makeRepos();
-  users.set("user-1", makeUser({ username: "alice" }));
+  users.set("user-1", makeUser({ id: "user-1" }));
   wallets.push(makeWallet());
   const challenge = makeChallenge({ message: "sign in message" });
   challenges.set(challenge.id, challenge);
@@ -477,7 +473,7 @@ test("createWalletSession consumes a valid challenge and returns a rotated opaqu
 
   assert.equal(result.sessionToken, "new-token");
   assert.equal(result.current.state, "authenticated");
-  assert.equal(result.current.user?.username, "alice");
+  assert.equal(result.current.user?.id, "user-1");
   assert.deepEqual(createdTokens, ["hash:new-token"]);
   assert.ok(challenges.get(challenge.id)?.consumed_at);
 });
