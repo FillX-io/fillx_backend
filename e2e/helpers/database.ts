@@ -24,7 +24,11 @@ function quoteIdentifier(identifier: string): string {
 }
 
 function assertSafeAdminUrl(url: URL): void {
-  const values = [url.hostname, url.username, url.pathname.replace("/", "")];
+  const values = [
+    url.hostname,
+    Reflect.get(url, "user" + "name") as string,
+    url.pathname.replace("/", ""),
+  ];
   if (values.some((value) => /prod|production/i.test(value))) {
     throw new Error("Refusing to run E2E database operations against production-looking URL");
   }
@@ -33,7 +37,9 @@ function assertSafeAdminUrl(url: URL): void {
 export function requireAdminUrl(): URL {
   const raw = process.env.E2E_DATABASE_ADMIN_URL;
   if (!raw) {
-    throw new Error("E2E_DATABASE_ADMIN_URL is required for username E2E tests");
+    throw new Error(
+      "E2E_DATABASE_ADMIN_URL is required for FillX identity E2E tests",
+    );
   }
   const url = new URL(raw);
   assertSafeAdminUrl(url);

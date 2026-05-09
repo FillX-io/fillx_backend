@@ -14,18 +14,20 @@ export function activeWalletHeaders(walletKey: string): Record<string, string> {
 export async function claimAvatarE2EUser(
   client: ContractRouterClient<Contract>,
 ): Promise<{ userId: string; walletKey: string }> {
-  const challenge = await client.username.requestClaimChallenge({
-    username: "avataruser",
+  const challenge = await client.identity.requestWalletSessionChallenge({
     walletAddress: evmWallet.address,
     chainType: "evm",
     chainId: 1,
   });
-  const claimed = await client.username.claim({
+  const current = await client.identity.verifyWalletSession({
     challengeId: challenge.challengeId,
     signature: await signEvmMessage(challenge.message),
   });
+  if (current.state !== "authenticated" || !current.user) {
+    throw new Error("Expected authenticated FillX profile");
+  }
   return {
-    userId: claimed.user.id,
+    userId: current.user.id,
     walletKey: evmWalletKey(evmWallet.address),
   };
 }
