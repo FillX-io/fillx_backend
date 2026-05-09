@@ -1,4 +1,5 @@
 import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/client.js";
 import {
   fillxAvatarUploads,
@@ -619,9 +620,15 @@ export async function getProfilesByWallets(
     displayName: string | null;
     avatarUrl: string | null;
     nationality: string | null;
+    primaryWallet: {
+      chainType: ChainType;
+      walletAddress: string;
+      walletKey: string;
+    };
   }>
 > {
   if (walletAddresses.length === 0) return [];
+  const primaryWallets = alias(userWallets, "primary_wallets");
   const rows = await db
     .select({
       walletAddress: userWallets.wallet_address,
@@ -629,14 +636,20 @@ export async function getProfilesByWallets(
       displayName: fillxUsers.display_name,
       avatarKey: fillxUsers.avatar_key,
       nationality: fillxUsers.nationality,
+      primaryChainType: primaryWallets.chain_type,
+      primaryWalletAddress: primaryWallets.wallet_address,
     })
     .from(userWallets)
     .innerJoin(fillxUsers, eq(fillxUsers.id, userWallets.user_id))
-    .where(
+    .innerJoin(
+      primaryWallets,
       and(
-        inArray(userWallets.wallet_address, walletAddresses),
-        eq(userWallets.is_primary, true),
+        eq(primaryWallets.user_id, fillxUsers.id),
+        eq(primaryWallets.is_primary, true),
       ),
+    )
+    .where(
+      inArray(userWallets.wallet_address, walletAddresses),
     );
 
   return rows.map((row) => ({
@@ -645,6 +658,11 @@ export async function getProfilesByWallets(
     displayName: row.displayName,
     avatarUrl: serializeAvatarUrl({ avatar_key: row.avatarKey }),
     nationality: row.nationality,
+    primaryWallet: {
+      chainType: row.primaryChainType,
+      walletAddress: row.primaryWalletAddress,
+      walletKey: `${row.primaryChainType}:${row.primaryWalletAddress}`,
+    },
   }));
 }
 

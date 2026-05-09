@@ -41,7 +41,7 @@ export type WalletSessionCurrentUser =
   | {
       state: "authenticated";
       walletKey: string;
-      user: FillxUser;
+      user: FillxUser & { primaryWallet: FillxPrimaryWalletProfile | null };
       guest: null;
       resumeExpiresAt: string;
     }
@@ -219,6 +219,25 @@ export function createWalletSessionService(
 
   function expiryFrom(proofTime: Date): Date {
     return new Date(proofTime.getTime() + WALLET_SESSION_TTL_MS);
+  }
+
+  async function withPrimaryWallet(
+    user: FillxUser,
+  ): Promise<FillxUser & { primaryWallet: FillxPrimaryWalletProfile | null }> {
+    const primaryWallet = await repos.wallets.findPrimaryByUserId(user.id);
+    return {
+      ...user,
+      primaryWallet: primaryWallet
+        ? {
+            chainType: primaryWallet.chain_type,
+            walletAddress: primaryWallet.wallet_address,
+            walletKey: fillxWalletKeyFromParts({
+              chainType: primaryWallet.chain_type,
+              walletAddress: primaryWallet.wallet_address,
+            }),
+          }
+        : null,
+    };
   }
 
   async function getFamilyFromToken(
@@ -400,7 +419,7 @@ export function createWalletSessionService(
       return {
         state: "authenticated",
         walletKey: verified.walletKey,
-        user,
+        user: await withPrimaryWallet(user),
         guest: null,
         resumeExpiresAt: verified.expiresAt.toISOString(),
       };
@@ -507,7 +526,7 @@ export function createWalletSessionService(
         current: {
           state: "authenticated",
           walletKey: remembered.walletSession.wallet_key,
-          user,
+          user: await withPrimaryWallet(user),
           guest: null,
           resumeExpiresAt: remembered.walletSession.expires_at.toISOString(),
         },

@@ -4,7 +4,11 @@ import { sql } from "drizzle-orm";
 import { getDb } from "../server/src/db/client.js";
 import { activeWalletHeaders, evmWalletKey } from "./helpers/avatar.js";
 import { setupE2E } from "./helpers/harness.js";
-import { evmWallet, signEvmMessage } from "./helpers/wallets.js";
+import {
+  evmWallet,
+  secondEvmWallet,
+  signEvmMessage,
+} from "./helpers/wallets.js";
 
 if (!process.env.E2E_DATABASE_ADMIN_URL) {
   throw new Error(
@@ -55,6 +59,74 @@ async function verifyEvmWalletProfile(
     challengeId: challenge.challengeId,
     signature: await signEvmMessage(challenge.message),
   });
+}
+
+async function addSecondaryEvmWalletSession(input: {
+  userId: string;
+  primaryWalletAddress: string;
+  secondaryWalletAddress: string;
+}): Promise<void> {
+  const db = getDb();
+  const primaryWalletAddress = input.primaryWalletAddress.toLowerCase();
+  const secondaryWalletAddress = input.secondaryWalletAddress.toLowerCase();
+  const familyResult = await db.execute(
+    sql<{ family_id: string }>`
+      select family_id
+      from fillx_wallet_sessions
+      where profile_user_id = ${input.userId}
+        and wallet_key = ${evmWalletKey(primaryWalletAddress)}
+      limit 1
+    `,
+  );
+  const familyRows = Array.isArray(familyResult)
+    ? familyResult
+    : familyResult.rows;
+  const familyId = familyRows[0]?.family_id;
+  assert.ok(familyId, "expected verified primary wallet session family");
+
+  await db.execute(sql`
+    insert into user_wallets (
+      user_id,
+      chain_type,
+      wallet_address,
+      is_primary,
+      verified_at
+    )
+    values (
+      ${input.userId},
+      'evm',
+      ${secondaryWalletAddress},
+      false,
+      now()
+    )
+  `);
+
+  await db.execute(sql`
+    insert into fillx_wallet_sessions (
+      family_id,
+      wallet_key,
+      wallet_address,
+      wallet_namespace,
+      signature_scheme,
+      last_signed_chain,
+      signed_at,
+      profile_user_id,
+      last_used_at,
+      expires_at
+    )
+    values (
+      ${familyId},
+      ${evmWalletKey(secondaryWalletAddress)},
+      ${secondaryWalletAddress},
+      'evm',
+      'eip191',
+      '1',
+      now(),
+      ${input.userId},
+      now(),
+      now() + interval '1 day'
+    )
+  `);
 }
 
 test("guest current-user is non-persistent", async (t) => {
@@ -129,4 +201,69 @@ test("public wallet lookup returns display metadata and no removed identity fiel
     evmWallet.address.toLowerCase(),
   );
   assertNoRemovedIdentityFields(profile.profiles[0]);
+});
+
+test("public wallet lookup by non-primary verified wallet returns primary wallet binding", async (t) => {
+  const { baseUrl, client, createClient } = await setupE2E(t);
+  const current = await verifyEvmWalletProfile(client);
+  assert.equal(current.state, "authenticated");
+  assert.ok(current.user);
+  await addSecondaryEvmWalletSession({
+    userId: current.user.id,
+    primaryWalletAddress: evmWallet.address,
+    secondaryWalletAddress: secondEvmWallet.address,
+  });
+
+  const { client: publicClient } = createClient({ baseUrl });
+  const profile = await publicClient.profile.getByWallets({
+    walletAddresses: [secondEvmWallet.address],
+  });
+
+  assert.equal(profile.profiles.length, 1);
+  assert.equal(
+    profile.profiles[0].walletAddress,
+    secondEvmWallet.address.toLowerCase(),
+  );
+  assert.equal(profile.profiles[0].primaryWallet.chainType, "evm");
+  assert.equal(
+    profile.profiles[0].primaryWallet.walletAddress,
+    evmWallet.address.toLowerCase(),
+  );
+  assert.equal(
+    profile.profiles[0].primaryWallet.walletKey,
+    evmWalletKey(evmWallet.address),
+  );
+  assertNoRemovedIdentityFields(profile.profiles[0]);
+});
+
+test("authenticated current-user on non-primary wallet session serializes stored primary wallet", async (t) => {
+  const { baseUrl, client, cookieJar, createClient } = await setupE2E(t);
+  const current = await verifyEvmWalletProfile(client);
+  assert.equal(current.state, "authenticated");
+  assert.ok(current.user);
+  await addSecondaryEvmWalletSession({
+    userId: current.user.id,
+    primaryWalletAddress: evmWallet.address,
+    secondaryWalletAddress: secondEvmWallet.address,
+  });
+
+  const { client: secondaryWalletClient } = createClient({
+    baseUrl,
+    cookieJar,
+    headers: activeWalletHeaders(evmWalletKey(secondEvmWallet.address)),
+  });
+  const resumed = await secondaryWalletClient.identity.getCurrentUser();
+
+  assert.equal(resumed.state, "authenticated");
+  assert.equal(resumed.walletKey, evmWalletKey(secondEvmWallet.address));
+  assert.equal(resumed.user?.id, current.user.id);
+  assert.equal(resumed.user?.primaryWallet?.chainType, "evm");
+  assert.equal(
+    resumed.user?.primaryWallet?.walletAddress,
+    evmWallet.address.toLowerCase(),
+  );
+  assert.equal(
+    resumed.user?.primaryWallet?.walletKey,
+    evmWalletKey(evmWallet.address),
+  );
 });

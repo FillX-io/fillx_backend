@@ -20,7 +20,7 @@ import {
 } from "../identity/wallet.js";
 import {
   createWalletSessionService,
-  partsFromFillxWalletKey,
+  fillxWalletKeyFromParts,
   type WalletSessionCurrentUser,
 } from "../identity/wallet-session.service.js";
 import {
@@ -77,19 +77,7 @@ function serializeCurrentWalletUser(current: WalletSessionCurrentUser) {
     return {
       state: current.state,
       walletKey: current.walletKey,
-      user: serializeUser({
-        ...current.user,
-        primaryWallet: (() => {
-          const parts = partsFromFillxWalletKey(current.walletKey);
-          return parts
-            ? {
-                chainType: parts.chainType,
-                walletAddress: parts.walletAddress,
-                walletKey: current.walletKey,
-              }
-            : null;
-        })(),
-      }),
+      user: serializeUser(current.user),
       guest: null,
       resumeExpiresAt: current.resumeExpiresAt,
     };
@@ -174,6 +162,23 @@ async function verifiedWalletSessionUser(input: {
   }
 
   return user;
+}
+
+async function primaryWalletProfileForUser(
+  repos: ReturnType<typeof createIdentityRepos>,
+  userId: string,
+) {
+  const primaryWallet = await repos.wallets.findPrimaryByUserId(userId);
+  return primaryWallet
+    ? {
+        chainType: primaryWallet.chain_type,
+        walletAddress: primaryWallet.wallet_address,
+        walletKey: fillxWalletKeyFromParts({
+          chainType: primaryWallet.chain_type,
+          walletAddress: primaryWallet.wallet_address,
+        }),
+      }
+    : null;
 }
 
 function walletRateLimitKey(input: {
@@ -342,7 +347,13 @@ export const identityRoutes = {
             current: {
               state: "authenticated" as const,
               walletKey: remembered.walletKey,
-              user,
+              user: {
+                ...user,
+                primaryWallet: await primaryWalletProfileForUser(
+                  repos,
+                  user.id,
+                ),
+              },
               guest: null,
               resumeExpiresAt: remembered.expiresAt,
             },

@@ -44,6 +44,7 @@ const PublicWalletProfile = z.object({
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   nationality: z.string().nullable(),
+  primaryWallet: FillxPrimaryWallet,
 });
 
 export const contract = oc.router({
