@@ -13,9 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export type UsernameStatus = "generated" | "claimed";
 export type ChainType = "evm" | "solana";
-export type ClaimStatus = "accepted" | "rejected" | "expired";
 export type AuthProvider = "privy";
 export type AvatarUploadStatus =
   | "pending"
@@ -51,10 +49,6 @@ export const fillxUsers = pgTable(
   "fillx_users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    username: text("username").notNull(),
-    username_status: text("username_status")
-      .$type<UsernameStatus>()
-      .notNull(),
     display_name: text("display_name"),
     avatar_key: text("avatar_key"),
     avatar_updated_at: timestamp("avatar_updated_at", { withTimezone: true }),
@@ -67,18 +61,6 @@ export const fillxUsers = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    usernameUnique: unique("fillx_users_username_unique").on(table.username),
-    usernameStatusIdx: index("fillx_users_username_status_idx").on(
-      table.username_status,
-    ),
-    usernameLowercaseCheck: check(
-      "fillx_users_username_lowercase",
-      sql`${table.username} = lower(${table.username})`,
-    ),
-    usernameStatusCheck: check(
-      "fillx_users_username_status_check",
-      sql`${table.username_status} in ('generated', 'claimed')`,
-    ),
     displayNameCheck: check(
       "fillx_users_display_name_check",
       sql`${table.display_name} is null or char_length(${table.display_name}) <= 50`,
@@ -210,40 +192,6 @@ export const userOrderlyAccounts = pgTable(
   }),
 );
 
-export const usernameClaimChallenges = pgTable(
-  "username_claim_challenges",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    user_id: uuid("user_id").references(() => fillxUsers.id, {
-      onDelete: "cascade",
-    }),
-    username: text("username").notNull(),
-    wallet_address: text("wallet_address").notNull(),
-    chain_type: text("chain_type").$type<ChainType>().notNull(),
-    chain_id: integer("chain_id"),
-    nonce: text("nonce").notNull(),
-    message: text("message").notNull(),
-    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumed_at: timestamp("consumed_at", { withTimezone: true }),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => ({
-    nonceUnique: unique("username_claim_challenges_nonce_unique").on(
-      table.nonce,
-    ),
-    userCreatedIdx: index("username_claim_challenges_user_created_idx").on(
-      table.user_id,
-      table.created_at.desc(),
-    ),
-    chainTypeCheck: check(
-      "username_claim_challenges_chain_type_check",
-      sql`${table.chain_type} in ('evm', 'solana')`,
-    ),
-  }),
-);
-
 export const fillxSessionFamilies = pgTable(
   "fillx_session_families",
   {
@@ -340,40 +288,6 @@ export const walletSignInChallenges = pgTable(
   }),
 );
 
-export const usernameClaims = pgTable(
-  "username_claims",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    user_id: uuid("user_id")
-      .notNull()
-      .references(() => fillxUsers.id, { onDelete: "cascade" }),
-    username: text("username").notNull(),
-    wallet_address: text("wallet_address").notNull(),
-    chain_type: text("chain_type").$type<ChainType>().notNull(),
-    signature: text("signature").notNull(),
-    message_hash: text("message_hash").notNull(),
-    status: text("status").$type<ClaimStatus>().notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => ({
-    userCreatedIdx: index("username_claims_user_created_idx").on(
-      table.user_id,
-      table.created_at.desc(),
-    ),
-    usernameIdx: index("username_claims_username_idx").on(table.username),
-    chainTypeCheck: check(
-      "username_claims_chain_type_check",
-      sql`${table.chain_type} in ('evm', 'solana')`,
-    ),
-    statusCheck: check(
-      "username_claims_status_check",
-      sql`${table.status} in ('accepted', 'rejected', 'expired')`,
-    ),
-  }),
-);
-
 export type FillxUser = typeof fillxUsers.$inferSelect;
 export type NewFillxUser = typeof fillxUsers.$inferInsert;
 export type UserWallet = typeof userWallets.$inferSelect;
@@ -383,6 +297,3 @@ export type FillxSessionFamily = typeof fillxSessionFamilies.$inferSelect;
 export type FillxWalletSession = typeof fillxWalletSessions.$inferSelect;
 export type WalletSignInChallenge =
   typeof walletSignInChallenges.$inferSelect;
-export type UsernameClaimChallenge =
-  typeof usernameClaimChallenges.$inferSelect;
-export type UsernameClaim = typeof usernameClaims.$inferSelect;

@@ -36,6 +36,13 @@
       "when": 1778207673797,
       "tag": "0004_add_s3_avatar_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778344058638,
+      "tag": "0005_remove_fillx_user_username",
+      "breakpoints": true
     }
   ]
 }

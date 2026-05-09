@@ -9,10 +9,7 @@ import {
   userOrderlyAccounts,
   userWallets,
   walletSignInChallenges,
-  usernameClaimChallenges,
-  usernameClaims,
   type ChainType,
-  type ClaimStatus,
   type FillxAvatarUpload,
   type FillxSessionFamily,
   type FillxUser,
@@ -21,9 +18,6 @@ import {
   type UserOrderlyAccount,
   type UserWallet,
   type WalletSignInChallenge,
-  type UsernameClaim,
-  type UsernameClaimChallenge,
-  type UsernameStatus,
 } from "../db/schema.js";
 import { serializeAvatarUrl } from "./profile-serialization.js";
 
@@ -47,58 +41,8 @@ export function createUsersRepo(db: DbLike) {
       );
     },
 
-    async findByUsername(username: string): Promise<FillxUser | undefined> {
-      return first(
-        await db
-          .select()
-          .from(fillxUsers)
-          .where(eq(fillxUsers.username, username))
-          .limit(1),
-      );
-    },
-
-    async createGeneratedUser(username: string): Promise<FillxUser> {
-      return firstOrThrow(
-        await db
-          .insert(fillxUsers)
-          .values({
-            username,
-            username_status: "generated" as UsernameStatus,
-          })
-          .returning(),
-      );
-    },
-
-    async createClaimedUser(username: string): Promise<FillxUser> {
-      return firstOrThrow(
-        await db
-          .insert(fillxUsers)
-          .values({ username, username_status: "claimed" as UsernameStatus })
-          .onConflictDoNothing({ target: fillxUsers.username })
-          .returning(),
-      );
-    },
-
-    async markUsernameClaimed(input: {
-      userId: string;
-      username: string;
-    }): Promise<FillxUser> {
-      return firstOrThrow(
-        await db
-          .update(fillxUsers)
-          .set({
-            username: input.username,
-            username_status: "claimed",
-            updated_at: new Date(),
-          })
-          .where(
-            and(
-              eq(fillxUsers.id, input.userId),
-              eq(fillxUsers.username_status, "generated"),
-            ),
-          )
-          .returning(),
-      );
+    async createUser(): Promise<FillxUser> {
+      return firstOrThrow(await db.insert(fillxUsers).values({}).returning());
     },
 
     async updateProfile(input: {
@@ -277,104 +221,6 @@ export function createOrderlyAccountsRepo(db: DbLike) {
               orderly_address: input.orderlyAddress,
               broker_id: input.brokerId,
             },
-          })
-          .returning(),
-      );
-    },
-  };
-}
-
-export function createUsernameClaimsRepo(db: DbLike) {
-  return {
-    async createChallenge(input: {
-      userId: string | null;
-      username: string;
-      walletAddress: string;
-      chainType: ChainType;
-      chainId: number | null;
-      nonce: string;
-      message: string;
-      expiresAt: Date;
-    }): Promise<UsernameClaimChallenge> {
-      return firstOrThrow(
-        await db
-          .insert(usernameClaimChallenges)
-          .values({
-            user_id: input.userId,
-            username: input.username,
-            wallet_address: input.walletAddress,
-            chain_type: input.chainType,
-            chain_id: input.chainId,
-            nonce: input.nonce,
-            message: input.message,
-            expires_at: input.expiresAt,
-          })
-          .returning(),
-      );
-    },
-
-    async findChallengeByIdForUpdate(
-      id: string,
-    ): Promise<UsernameClaimChallenge | undefined> {
-      return first(
-        await db
-          .select()
-          .from(usernameClaimChallenges)
-          .where(eq(usernameClaimChallenges.id, id))
-          .limit(1)
-          .for("update"),
-      );
-    },
-
-    async findChallengeById(
-      id: string,
-    ): Promise<UsernameClaimChallenge | undefined> {
-      return first(
-        await db
-          .select()
-          .from(usernameClaimChallenges)
-          .where(eq(usernameClaimChallenges.id, id))
-          .limit(1),
-      );
-    },
-
-    async consumeChallengeIfUnused(
-      id: string,
-    ): Promise<UsernameClaimChallenge | undefined> {
-      return first(
-        await db
-          .update(usernameClaimChallenges)
-          .set({ consumed_at: new Date() })
-          .where(
-            and(
-              eq(usernameClaimChallenges.id, id),
-              isNull(usernameClaimChallenges.consumed_at),
-            ),
-          )
-          .returning(),
-      );
-    },
-
-    async insertClaimAudit(input: {
-      userId: string;
-      username: string;
-      walletAddress: string;
-      chainType: ChainType;
-      signature: string;
-      messageHash: string;
-      status: ClaimStatus;
-    }): Promise<UsernameClaim> {
-      return firstOrThrow(
-        await db
-          .insert(usernameClaims)
-          .values({
-            user_id: input.userId,
-            username: input.username,
-            wallet_address: input.walletAddress,
-            chain_type: input.chainType,
-            signature: input.signature,
-            message_hash: input.messageHash,
-            status: input.status,
           })
           .returning(),
       );
@@ -770,8 +616,6 @@ export async function getProfilesByWallets(
   Array<{
     walletAddress: string;
     userId: string;
-    username: string;
-    usernameStatus: UsernameStatus;
     displayName: string | null;
     avatarUrl: string | null;
     nationality: string | null;
@@ -782,8 +626,6 @@ export async function getProfilesByWallets(
     .select({
       walletAddress: userWallets.wallet_address,
       userId: fillxUsers.id,
-      username: fillxUsers.username,
-      usernameStatus: fillxUsers.username_status,
       displayName: fillxUsers.display_name,
       avatarKey: fillxUsers.avatar_key,
       nationality: fillxUsers.nationality,
@@ -800,8 +642,6 @@ export async function getProfilesByWallets(
   return rows.map((row) => ({
     walletAddress: row.walletAddress,
     userId: row.userId,
-    username: row.username,
-    usernameStatus: row.usernameStatus,
     displayName: row.displayName,
     avatarUrl: serializeAvatarUrl({ avatar_key: row.avatarKey }),
     nationality: row.nationality,
@@ -813,7 +653,6 @@ export function createIdentityRepos(db: DbLike) {
     users: createUsersRepo(db),
     wallets: createWalletsRepo(db),
     authIdentities: createAuthIdentitiesRepo(db),
-    usernameClaims: createUsernameClaimsRepo(db),
     sessionFamilies: createSessionFamiliesRepo(db),
     walletSessions: createWalletSessionsRepo(db),
     walletSignInChallenges: createWalletSignInChallengesRepo(db),
