@@ -5,10 +5,6 @@ export type ApiErrorCode =
   | "SESSION_NOT_CONFIGURED"
   | "USER_NOT_AUTHENTICATED"
   | "USER_NOT_FOUND"
-  | "INVALID_USERNAME"
-  | "USERNAME_RESERVED"
-  | "USERNAME_TAKEN"
-  | "USERNAME_ALREADY_CLAIMED"
   | "PRIMARY_WALLET_ALREADY_SET"
   | "WALLET_PROFILE_NOT_FOUND"
   | "CHALLENGE_NOT_FOUND"
@@ -41,8 +37,6 @@ function statusForApiError(code: ApiErrorCode): number {
       return 404;
     case "RATE_LIMITED":
       return 429;
-    case "USERNAME_TAKEN":
-    case "USERNAME_ALREADY_CLAIMED":
     case "PRIMARY_WALLET_ALREADY_SET":
     case "CHALLENGE_ALREADY_USED":
     case "AVATAR_UPLOAD_ALREADY_FINALIZED":
@@ -51,9 +45,6 @@ function statusForApiError(code: ApiErrorCode): number {
       return 413;
     case "AVATAR_INVALID_CONTENT_TYPE":
       return 415;
-    case "INVALID_USERNAME":
-    case "USERNAME_RESERVED":
-      return 422;
     case "CHALLENGE_EXPIRED":
     case "SIGNATURE_INVALID":
     case "AVATAR_UPLOAD_EXPIRED":

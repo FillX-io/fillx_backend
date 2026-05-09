@@ -4,7 +4,6 @@ import { z } from "zod";
 // Generic passthrough schema for endpoints that return dynamic data
 const JsonData = z.any();
 const ChainType = z.enum(["evm", "solana"]);
-const UsernameStatus = z.enum(["generated", "claimed"]);
 const AvatarUploadContentType = z.enum(["image/jpeg", "image/png", "image/webp"]);
 const FillxPrimaryWallet = z.object({
   chainType: ChainType,
@@ -13,19 +12,14 @@ const FillxPrimaryWallet = z.object({
 });
 const FillxUserProfile = z.object({
   id: z.string(),
-  username: z.string(),
-  usernameStatus: UsernameStatus,
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   nationality: z.string().nullable(),
-  hasClaimedUsername: z.boolean(),
   primaryWallet: FillxPrimaryWallet.nullable(),
 });
 const GuestResponse = z.object({ isGuest: z.literal(true) });
 const PublicFillxProfile = z.object({
   userId: z.string(),
-  username: z.string(),
-  usernameStatus: UsernameStatus,
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   nationality: z.string().nullable(),
@@ -47,8 +41,6 @@ const CurrentUserResponse = z.object({
 const PublicWalletProfile = z.object({
   walletAddress: z.string(),
   userId: z.string(),
-  username: z.string(),
-  usernameStatus: UsernameStatus,
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   nationality: z.string().nullable(),
@@ -299,41 +291,6 @@ export const contract = oc.router({
       .input(z.object({ uploadId: z.string() }))
       .output(z.object({ user: FillxUserProfile })),
     removeAvatar: oc.output(z.object({ user: FillxUserProfile })),
-  }),
-  username: oc.router({
-    checkAvailable: oc
-      .input(z.object({ username: z.string() }))
-      .output(
-        z.object({
-          available: z.boolean(),
-          normalizedUsername: z.string(),
-          error: z.string().optional(),
-        }),
-      ),
-    requestClaimChallenge: oc
-      .input(
-        z.object({
-          username: z.string(),
-          walletAddress: z.string(),
-          chainType: ChainType,
-          chainId: z.number().int().positive().nullable().optional(),
-        }),
-      )
-      .output(
-        z.object({
-          challengeId: z.string(),
-          expiresAt: z.string(),
-          message: z.string(),
-        }),
-      ),
-    claim: oc
-      .input(
-        z.object({
-          challengeId: z.string(),
-          signature: z.string(),
-        }),
-      )
-      .output(z.object({ user: FillxUserProfile })),
   }),
   profile: oc.router({
     getByWallets: oc
