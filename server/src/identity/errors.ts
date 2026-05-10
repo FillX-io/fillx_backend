@@ -5,6 +5,9 @@ export type ApiErrorCode =
   | "SESSION_NOT_CONFIGURED"
   | "USER_NOT_AUTHENTICATED"
   | "USER_NOT_FOUND"
+  | "USERNAME_REQUIRED"
+  | "INVALID_DISPLAY_NAME"
+  | "DISPLAY_NAME_TAKEN"
   | "PRIMARY_WALLET_ALREADY_SET"
   | "WALLET_PROFILE_NOT_FOUND"
   | "CHALLENGE_NOT_FOUND"
@@ -38,6 +41,7 @@ function statusForApiError(code: ApiErrorCode): number {
     case "RATE_LIMITED":
       return 429;
     case "PRIMARY_WALLET_ALREADY_SET":
+    case "DISPLAY_NAME_TAKEN":
     case "CHALLENGE_ALREADY_USED":
     case "AVATAR_UPLOAD_ALREADY_FINALIZED":
       return 409;
@@ -46,6 +50,8 @@ function statusForApiError(code: ApiErrorCode): number {
     case "AVATAR_INVALID_CONTENT_TYPE":
       return 415;
     case "CHALLENGE_EXPIRED":
+    case "USERNAME_REQUIRED":
+    case "INVALID_DISPLAY_NAME":
     case "SIGNATURE_INVALID":
     case "AVATAR_UPLOAD_EXPIRED":
     case "AVATAR_UPLOAD_OBJECT_MISMATCH":

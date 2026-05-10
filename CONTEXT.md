@@ -2,7 +2,7 @@
 
 FillX Identity describes how users, wallets, display metadata, and authentication identities relate to public trading profiles. It exists to keep wallet ownership, profile lookup, and account authentication language precise.
 
-FillX profile identity is anchored by verified wallets. A profile may have editable display metadata such as display name, avatar, and nationality, but display name is nullable and not unique. Public UI should render `displayName || shortened primary wallet address`.
+FillX profile identity is anchored by verified wallets. A profile may have editable display metadata such as display name, avatar, and nationality. Display name follows username syntax (`A-Z`, `a-z`, `0-9`, `_`, 3-25 characters), is unique case-insensitively when present, and is nullable only for legacy profiles. Public UI should render `displayName || shortened primary wallet address`.
 
 ## Language
 
@@ -11,7 +11,7 @@ A FillX identity record that owns display metadata and any verified wallet bindi
 _Avoid_: account, auth user
 
 **Display Metadata**:
-Editable public profile fields such as display name, avatar, and nationality. Display name is nullable and not unique.
+Editable public profile fields such as display name, avatar, and nationality. Display name follows username syntax, is unique case-insensitively when present, and is nullable only for legacy profiles. Display metadata does not anchor identity.
 _Avoid_: identity proof, unique handle
 
 **Wallet Binding**:
@@ -64,7 +64,8 @@ _Avoid_: wallet, wallet binding
 
 ## Relationships
 
-- A **User Profile** is anchored by verified wallet bindings and may have nullable, non-unique **Display Metadata**.
+- A **User Profile** is anchored by verified wallet bindings and may have **Display Metadata**.
+- Display name follows username syntax, is unique case-insensitively when present, and is nullable only for legacy profiles.
 - Public UI identifies a profile with display name when present, otherwise with a shortened **Primary Wallet** address.
 - A **Wallet Binding** requires a **Wallet Proof** or trusted wallet ownership data from an authentication provider.
 - A **Wallet Lookup Hint** does not create a **Wallet Binding**.
@@ -95,7 +96,7 @@ _Avoid_: wallet, wallet binding
 > **Domain expert:** "No. A FillX Session authenticates the user profile, but fresh Wallet Proof is still required for wallet-bound actions."
 
 > **Dev:** "Can display name prove that two requests belong to the same FillX user?"
-> **Domain expert:** "No. Display name is nullable and not unique. Verified wallet bindings anchor profile identity."
+> **Domain expert:** "No. Display name is only display metadata. Verified wallet bindings anchor profile identity."
 
 > **Dev:** "Should calling getCurrentUser create a User Profile for an anonymous visitor?"
 > **Domain expert:** "No. Anonymous visitors receive a Guest Response. A permanent User Profile is created only after verified auth such as Wallet Proof or Privy authentication."

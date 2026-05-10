@@ -22,3 +22,9 @@ test("IdentityApiError preserves non-5xx messages", () => {
   assert.equal(error.status, 415);
   assert.equal(error.toJSON().message, "Only PNG is supported");
 });
+
+test("IdentityApiError maps display name validation statuses", () => {
+  assert.equal(apiError("USERNAME_REQUIRED").status, 400);
+  assert.equal(apiError("INVALID_DISPLAY_NAME").status, 400);
+  assert.equal(apiError("DISPLAY_NAME_TAKEN").status, 409);
+});

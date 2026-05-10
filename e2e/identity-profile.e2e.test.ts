@@ -8,6 +8,7 @@ import {
   evmWallet,
   secondEvmWallet,
   signEvmMessage,
+  signSecondEvmMessage,
 } from "./helpers/wallets.js";
 
 if (!process.env.E2E_DATABASE_ADMIN_URL) {
@@ -185,7 +186,7 @@ test("public wallet lookup returns display metadata and no removed identity fiel
     headers: activeWalletHeaders(evmWalletKey(evmWallet.address)),
   });
   await activeWalletClient.identity.updateDisplayName({
-    displayName: "FillX Trader",
+    displayName: "FillX_Trader",
     nationality: "US",
   });
 
@@ -194,13 +195,56 @@ test("public wallet lookup returns display metadata and no removed identity fiel
     walletAddresses: [evmWallet.address],
   });
   assert.equal(profile.profiles.length, 1);
-  assert.equal(profile.profiles[0].displayName, "FillX Trader");
+  assert.equal(profile.profiles[0].displayName, "FillX_Trader");
   assert.equal(profile.profiles[0].nationality, "US");
   assert.equal(
     profile.profiles[0].walletAddress,
     evmWallet.address.toLowerCase(),
   );
   assertNoRemovedIdentityFields(profile.profiles[0]);
+});
+
+test("duplicate display name update is rejected case-insensitively", async (t) => {
+  const { baseUrl, client, cookieJar, createClient } = await setupE2E(t);
+  await verifyEvmWalletProfile(client);
+
+  const { client: firstActiveWalletClient } = createClient({
+    baseUrl,
+    cookieJar,
+    headers: activeWalletHeaders(evmWalletKey(evmWallet.address)),
+  });
+  await firstActiveWalletClient.identity.updateDisplayName({
+    displayName: "Taken_Name",
+  });
+
+  const { client: secondClient, cookieJar: secondCookieJar } = createClient({
+    baseUrl,
+  });
+  const challenge = await secondClient.identity.requestWalletSessionChallenge({
+    walletAddress: secondEvmWallet.address,
+    chainType: "evm",
+    chainId: 1,
+  });
+  await secondClient.identity.verifyWalletSession({
+    challengeId: challenge.challengeId,
+    signature: await signSecondEvmMessage(challenge.message),
+  });
+
+  const { client: secondActiveWalletClient } = createClient({
+    baseUrl,
+    cookieJar: secondCookieJar,
+    headers: activeWalletHeaders(evmWalletKey(secondEvmWallet.address)),
+  });
+  await assert.rejects(
+    secondActiveWalletClient.identity.updateDisplayName({
+      displayName: "taken_name",
+    }),
+    (error) => {
+      assert.equal((error as { code?: unknown }).code, "DISPLAY_NAME_TAKEN");
+      assert.equal((error as { status?: unknown }).status, 409);
+      return true;
+    },
+  );
 });
 
 test("public wallet lookup by non-primary verified wallet returns primary wallet binding", async (t) => {

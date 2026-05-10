@@ -5,7 +5,7 @@ import {
   type AvatarServiceRepos,
 } from "../identity/avatar.service.js";
 import { createAvatarStorage } from "../identity/avatar.storage.js";
-import { apiError } from "../identity/errors.js";
+import { apiError, type ApiErrorCode } from "../identity/errors.js";
 import { createIdentityService } from "../identity/identity.service.js";
 import { serializeAvatarUrl } from "../identity/profile-serialization.js";
 import { normalizeProfileLookupWallets } from "../identity/profile-lookup.js";
@@ -114,6 +114,20 @@ function requirePrivy(context: AppContext) {
     throw apiError("AUTH_REQUIRED");
   }
   return context.auth.privy;
+}
+
+function apiErrorForIdentityServiceError(error: unknown): never {
+  if (error instanceof Error) {
+    const codeByMessage: Partial<Record<string, ApiErrorCode>> = {
+      USERNAME_REQUIRED: "USERNAME_REQUIRED",
+      INVALID_DISPLAY_NAME: "INVALID_DISPLAY_NAME",
+      DISPLAY_NAME_TAKEN: "DISPLAY_NAME_TAKEN",
+      USER_NOT_FOUND: "USER_NOT_FOUND",
+    };
+    const code = codeByMessage[error.message];
+    if (code) throw apiError(code);
+  }
+  throw error;
 }
 
 async function verifiedWalletSessionUser(input: {
@@ -377,11 +391,13 @@ export const identityRoutes = {
             users: repos.users,
             authIdentities: repos.authIdentities,
           });
-          const updated = await service.updateProfile({
-            userId: user.id,
-            displayName: input.displayName,
-            nationality: input.nationality,
-          });
+          const updated = await service
+            .updateProfile({
+              userId: user.id,
+              displayName: input.displayName,
+              nationality: input.nationality,
+            })
+            .catch(apiErrorForIdentityServiceError);
           return { user: serializeUser(updated) };
         }),
     ),

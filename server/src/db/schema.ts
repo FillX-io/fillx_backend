@@ -63,8 +63,13 @@ export const fillxUsers = pgTable(
   (table) => ({
     displayNameCheck: check(
       "fillx_users_display_name_check",
-      sql`${table.display_name} is null or char_length(${table.display_name}) <= 50`,
+      sql`${table.display_name} is null or ${table.display_name} ~ '^[A-Za-z0-9_]{3,25}$'`,
     ),
+    displayNameLowerUniqueIdx: uniqueIndex(
+      "fillx_users_display_name_lower_unique_idx",
+    )
+      .on(sql`lower(${table.display_name})`)
+      .where(sql`${table.display_name} is not null`),
     nationalityCheck: check(
       "fillx_users_nationality_check",
       sql`${table.nationality} is null or ${table.nationality} ~ '^[A-Z]{2}$'`,

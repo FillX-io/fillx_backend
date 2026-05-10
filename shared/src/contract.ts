@@ -268,7 +268,7 @@ export const contract = oc.router({
     updateDisplayName: oc
       .input(
         z.object({
-          displayName: z.string().max(50).nullable().optional(),
+          displayName: z.string().nullable().optional(),
           nationality: z.string().nullable().optional(),
         }),
       )
