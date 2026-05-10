@@ -24,7 +24,14 @@ test("IdentityApiError preserves non-5xx messages", () => {
 });
 
 test("IdentityApiError maps display name validation statuses", () => {
-  assert.equal(apiError("USERNAME_REQUIRED").status, 400);
-  assert.equal(apiError("INVALID_DISPLAY_NAME").status, 400);
-  assert.equal(apiError("DISPLAY_NAME_TAKEN").status, 409);
+  const required = apiError("USERNAME_REQUIRED");
+  const invalid = apiError("INVALID_DISPLAY_NAME");
+  const taken = apiError("DISPLAY_NAME_TAKEN");
+
+  assert.equal(required.status, 400);
+  assert.equal(required.toJSON().message, "USERNAME_REQUIRED");
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.toJSON().message, "INVALID_DISPLAY_NAME");
+  assert.equal(taken.status, 409);
+  assert.equal(taken.toJSON().message, "DISPLAY_NAME_TAKEN");
 });
