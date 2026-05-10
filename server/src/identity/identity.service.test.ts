@@ -138,7 +138,10 @@ test("createUserFromWalletProof creates a profile without generated identity dat
   assert.deepEqual(calls, ["createUser"]);
 });
 
-function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
+function makeProfileUpdateService(
+  initialUser: FillxUser = makeUser({ display_name: "FillX_Trader" }),
+  users: FillxUser[] = [],
+) {
   let stored = initialUser;
   const updates: Array<{
     userId: string;
@@ -146,25 +149,37 @@ function makeProfileUpdateService(initialUser: FillxUser = makeUser()) {
     nationality?: string | null;
   }> = [];
 
-  const service = createIdentityService({
-    users: {
-      findById: async (id) => (id === stored.id ? stored : undefined),
-      createUser: async () => {
-        throw new Error("should not create user");
-      },
-      updateProfile: async (input) => {
-        updates.push(input);
-        stored = {
-          ...stored,
-          display_name:
-            input.displayName === undefined ? stored.display_name : input.displayName,
-          nationality:
-            input.nationality === undefined ? stored.nationality : input.nationality,
-          updated_at: new Date("2026-05-07T00:01:00.000Z"),
-        };
-        return stored;
-      },
+  const usersRepo = {
+    findById: async (id: string) => (id === stored.id ? stored : undefined),
+    findByDisplayNameCaseInsensitive: async (displayName: string) => {
+      const requested = displayName.toLowerCase();
+      return [stored, ...users].find(
+        (user) => user.display_name?.toLowerCase() === requested,
+      );
     },
+    createUser: async () => {
+      throw new Error("should not create user");
+    },
+    updateProfile: async (input: {
+      userId: string;
+      displayName?: string | null;
+      nationality?: string | null;
+    }) => {
+      updates.push(input);
+      stored = {
+        ...stored,
+        display_name:
+          input.displayName === undefined ? stored.display_name : input.displayName,
+        nationality:
+          input.nationality === undefined ? stored.nationality : input.nationality,
+        updated_at: new Date("2026-05-07T00:01:00.000Z"),
+      };
+      return stored;
+    },
+  };
+
+  const service = createIdentityService({
+    users: usersRepo,
   });
 
   return {
@@ -179,14 +194,14 @@ test("updateProfile trims and updates display name without avatar fields", async
 
   const result = await service.updateProfile({
     userId: "user-1",
-    displayName: " FillX Trader ",
+    displayName: " FillX_Trader ",
   });
 
-  assert.equal(result.display_name, "FillX Trader");
+  assert.equal(result.display_name, "FillX_Trader");
   assert.deepEqual(updates, [
     {
       userId: "user-1",
-      displayName: "FillX Trader",
+      displayName: "FillX_Trader",
     },
   ]);
 });
@@ -217,7 +232,7 @@ test("updateProfile accepts uppercase nationality unchanged", async () => {
 
 test("updateProfile clears nationality with empty string or null", async () => {
   const { service, updates } = makeProfileUpdateService(
-    makeUser({ nationality: "JP" }),
+    makeUser({ display_name: "FillX_Trader", nationality: "JP" }),
   );
 
   const emptyResult = await service.updateProfile({
@@ -269,34 +284,158 @@ test("updateProfile rejects non-ASCII nationality before writing", async () => {
 
 test("updateProfile preserves omitted fields and trims display name", async () => {
   const { service } = makeProfileUpdateService(
-    makeUser({ display_name: "Existing", nationality: "BR" }),
+    makeUser({ display_name: "Existing_User", nationality: "BR" }),
   );
 
   const displayNameResult = await service.updateProfile({
     userId: "user-1",
-    displayName: "  New Display  ",
+    displayName: "  New_Display  ",
   });
   const nationalityResult = await service.updateProfile({
     userId: "user-1",
     nationality: "ca",
   });
 
-  assert.equal(displayNameResult.display_name, "New Display");
+  assert.equal(displayNameResult.display_name, "New_Display");
   assert.equal(displayNameResult.nationality, "BR");
-  assert.equal(nationalityResult.display_name, "New Display");
+  assert.equal(nationalityResult.display_name, "New_Display");
   assert.equal(nationalityResult.nationality, "CA");
 });
 
-test("updateProfile clears display name with null", async () => {
+test("updateProfile rejects null display name before writing", async () => {
   const { service, updates } = makeProfileUpdateService(
-    makeUser({ display_name: "Existing" }),
+    makeUser({ display_name: "Existing_User" }),
+  );
+
+  await assert.rejects(
+    service.updateProfile({
+      userId: "user-1",
+      displayName: null,
+    }),
+    /USERNAME_REQUIRED/,
+  );
+
+  assert.deepEqual(updates, []);
+});
+
+const invalidDisplayNameCases: Array<{
+  name: string;
+  displayName: string;
+  error: RegExp;
+}> = [
+  { name: "blank", displayName: "   ", error: /USERNAME_REQUIRED/ },
+  { name: "too short", displayName: "ab", error: /INVALID_DISPLAY_NAME/ },
+  {
+    name: "too long",
+    displayName: "abcdefghijklmnopqrstuvwxyz",
+    error: /INVALID_DISPLAY_NAME/,
+  },
+  {
+    name: "spaces",
+    displayName: "FillX Trader",
+    error: /INVALID_DISPLAY_NAME/,
+  },
+  { name: "hyphen", displayName: "FillX-Trader", error: /INVALID_DISPLAY_NAME/ },
+  { name: "dot", displayName: "FillX.Trader", error: /INVALID_DISPLAY_NAME/ },
+  { name: "non-ASCII", displayName: "FillX_ß", error: /INVALID_DISPLAY_NAME/ },
+  { name: "symbols", displayName: "FillX!", error: /INVALID_DISPLAY_NAME/ },
+];
+
+for (const invalidCase of invalidDisplayNameCases) {
+  test(`updateProfile rejects ${invalidCase.name} display name`, async () => {
+    const { service, updates } = makeProfileUpdateService();
+
+    await assert.rejects(
+      service.updateProfile({
+        userId: "user-1",
+        displayName: invalidCase.displayName,
+      }),
+      invalidCase.error,
+    );
+
+    assert.deepEqual(updates, []);
+  });
+}
+
+test("updateProfile rejects case-insensitive display name duplicates", async () => {
+  const { service, updates } = makeProfileUpdateService(
+    makeUser({ id: "user-1", display_name: "Current_User" }),
+    [makeUser({ id: "user-2", display_name: "Taken_Name" })],
+  );
+
+  await assert.rejects(
+    service.updateProfile({
+      userId: "user-1",
+      displayName: "taken_name",
+    }),
+    /DISPLAY_NAME_TAKEN/,
+  );
+
+  assert.deepEqual(updates, []);
+});
+
+test("updateProfile maps display name unique index violations to taken", async () => {
+  const uniqueViolation = Object.assign(new Error("duplicate key"), {
+    code: "23505",
+    constraint: "fillx_users_display_name_lower_unique_idx",
+  });
+  const usersRepo = {
+    findById: async (id: string) =>
+      id === "user-1" ? makeUser({ id, display_name: "Current_User" }) : undefined,
+    findByDisplayNameCaseInsensitive: async () => undefined,
+    createUser: async () => {
+      throw new Error("should not create user");
+    },
+    updateProfile: async () => {
+      throw uniqueViolation;
+    },
+  };
+  const service = createIdentityService({ users: usersRepo });
+
+  await assert.rejects(
+    service.updateProfile({
+      userId: "user-1",
+      displayName: "New_Display",
+    }),
+    /DISPLAY_NAME_TAKEN/,
+  );
+});
+
+test("updateProfile allows the same user to change only display name casing", async () => {
+  const { service, updates } = makeProfileUpdateService(
+    makeUser({ id: "user-1", display_name: "FillX_Trader" }),
   );
 
   const result = await service.updateProfile({
     userId: "user-1",
-    displayName: null,
+    displayName: "fillx_trader",
   });
 
-  assert.equal(result.display_name, null);
-  assert.deepEqual(updates, [{ userId: "user-1", displayName: null }]);
+  assert.equal(result.display_name, "fillx_trader");
+  assert.deepEqual(updates, [{ userId: "user-1", displayName: "fillx_trader" }]);
+});
+
+test("updateProfile rejects nationality-only update when stored display name is null or invalid", async () => {
+  const nullDisplayName = makeProfileUpdateService(makeUser({ display_name: null }));
+  const invalidDisplayName = makeProfileUpdateService(
+    makeUser({ display_name: "Invalid User" }),
+  );
+
+  await assert.rejects(
+    nullDisplayName.service.updateProfile({
+      userId: "user-1",
+      nationality: "us",
+    }),
+    /USERNAME_REQUIRED/,
+  );
+  await assert.rejects(
+    invalidDisplayName.service.updateProfile({
+      userId: "user-1",
+      nationality: "us",
+    }),
+    /INVALID_DISPLAY_NAME/,
+  );
+
+  assert.deepEqual(nullDisplayName.updates, []);
+  assert.deepEqual(invalidDisplayName.updates, []);
 });

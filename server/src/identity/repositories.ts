@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/client.js";
 import {
@@ -39,6 +39,23 @@ export function createUsersRepo(db: DbLike) {
     async findById(id: string): Promise<FillxUser | undefined> {
       return first(
         await db.select().from(fillxUsers).where(eq(fillxUsers.id, id)).limit(1),
+      );
+    },
+
+    async findByDisplayNameCaseInsensitive(
+      displayName: string,
+    ): Promise<FillxUser | undefined> {
+      return first(
+        await db
+          .select()
+          .from(fillxUsers)
+          .where(
+            eq(
+              sql<string>`lower(${fillxUsers.display_name})`,
+              displayName.toLowerCase(),
+            ),
+          )
+          .limit(1),
       );
     },
 

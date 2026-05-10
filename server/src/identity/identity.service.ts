@@ -5,6 +5,9 @@ export type { FillxUser } from "../db/schema.js";
 export type IdentityRepos = {
   users: {
     findById?: (id: string) => Promise<FillxUser | undefined>;
+    findByDisplayNameCaseInsensitive?: (
+      displayName: string,
+    ) => Promise<FillxUser | undefined>;
     createUser?: () => Promise<FillxUser>;
     updateProfile: (input: {
       userId: string;
@@ -34,14 +37,39 @@ export type CurrentUserResult = {
   guest: { isGuest: true } | null;
 };
 
-function normalizeDisplayName(input: string | null): string | null {
-  if (input === null) return null;
+const displayNamePattern = /^[A-Za-z0-9_]{3,25}$/;
+const displayNameUniqueIndex = "fillx_users_display_name_lower_unique_idx";
+
+function hasValidDisplayName(input: string | null): input is string {
+  return input !== null && displayNamePattern.test(input);
+}
+
+function normalizeDisplayName(input: string | null): string {
+  if (input === null) throw new Error("USERNAME_REQUIRED");
 
   const displayName = input.trim();
-  if (displayName.length > 50) {
+  if (displayName.length === 0) {
+    throw new Error("USERNAME_REQUIRED");
+  }
+  if (!hasValidDisplayName(displayName)) {
     throw new Error("INVALID_DISPLAY_NAME");
   }
-  return displayName.length > 0 ? displayName : null;
+  return displayName;
+}
+
+function isDisplayNameUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+
+  const maybeError = error as {
+    code?: unknown;
+    constraint?: unknown;
+    constraint_name?: unknown;
+  };
+  return (
+    maybeError.code === "23505" &&
+    (maybeError.constraint === displayNameUniqueIndex ||
+      maybeError.constraint_name === displayNameUniqueIndex)
+  );
 }
 
 function normalizeNationality(input: string | null): string | null {
@@ -114,6 +142,13 @@ export function createIdentityService(repos: IdentityRepos) {
       displayName?: string | null;
       nationality?: string | null;
     }): Promise<FillxUser> {
+      if (!repos.users.findById || !repos.users.findByDisplayNameCaseInsensitive) {
+        throw new Error("IDENTITY_REPO_INCOMPLETE");
+      }
+
+      const existing = await repos.users.findById(input.userId);
+      if (!existing) throw new Error("USER_NOT_FOUND");
+
       const update: {
         userId: string;
         displayName?: string | null;
@@ -122,6 +157,12 @@ export function createIdentityService(repos: IdentityRepos) {
 
       if (input.displayName !== undefined) {
         update.displayName = normalizeDisplayName(input.displayName);
+        const duplicate = await repos.users.findByDisplayNameCaseInsensitive(
+          update.displayName,
+        );
+        if (duplicate && duplicate.id !== input.userId) {
+          throw new Error("DISPLAY_NAME_TAKEN");
+        }
       }
       if (input.nationality !== undefined) {
         update.nationality = normalizeNationality(input.nationality);
@@ -133,7 +174,21 @@ export function createIdentityService(repos: IdentityRepos) {
         throw new Error("PROFILE_UPDATE_EMPTY");
       }
 
-      return repos.users.updateProfile(update);
+      const nextDisplayName =
+        update.displayName === undefined ? existing.display_name : update.displayName;
+      if (nextDisplayName === null) throw new Error("USERNAME_REQUIRED");
+      if (!hasValidDisplayName(nextDisplayName)) {
+        throw new Error("INVALID_DISPLAY_NAME");
+      }
+
+      try {
+        return await repos.users.updateProfile(update);
+      } catch (error) {
+        if (isDisplayNameUniqueViolation(error)) {
+          throw new Error("DISPLAY_NAME_TAKEN");
+        }
+        throw error;
+      }
     },
   };
 }
