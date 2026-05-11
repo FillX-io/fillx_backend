@@ -12,43 +12,8 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1778144795672,
-      "tag": "0001_faithful_archangel",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1778173565748,
-      "tag": "0002_outstanding_eternals",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1778173565749,
-      "tag": "0003_add_fillx_user_nationality",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1778207673797,
-      "tag": "0004_add_s3_avatar_uploads",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1778344058638,
-      "tag": "0005_remove_fillx_user_username",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1778395353579,
-      "tag": "0006_displayname_username_validation",
+      "when": 1778425674057,
+      "tag": "0001_current_identity_avatar_schema",
       "breakpoints": true
     }
   ]
