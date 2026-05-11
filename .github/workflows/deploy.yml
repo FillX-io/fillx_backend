@@ -24,6 +24,7 @@ jobs:
             cd ${{ secrets.EC2_PROJECT_PATH }}
             git pull origin main
             docker compose build
+            docker compose stop app
             docker compose run --rm app sh -c "cd server && yarn db:migrate"
-            docker compose up -d
+            docker compose up -d app
             docker image prune -f
